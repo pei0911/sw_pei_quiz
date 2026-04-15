@@ -6,23 +6,37 @@
 <title>社工師考古題練習系統</title>
 
 <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-  const firebaseConfig = {
-    apiKey: "AIzaSyBOjrYo1aLclJKJisTs3Q5JrGWsOIxqtRw",
-    authDomain: "social-quiz-a9579.firebaseapp.com",
-    projectId: "social-quiz-a9579",
-    storageBucket: "social-quiz-a9579.firebasestorage.app",
-    messagingSenderId: "405193951436",
-    appId: "1:405193951436:web:b40ffa20681e5c7f9c5a69",
-    measurementId: "G-ZC4GNQQQWN"
-  };
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
-  window._db = db;
-  window._dbFns = { doc, setDoc, getDoc };
-  window._firebaseReady = true;
-  document.dispatchEvent(new Event('firebaseReady'));
+  window._firebaseReady = false;
+  window._db = null;
+  window._dbFns = null;
+
+  try {
+    const [{ initializeApp }, { getFirestore, doc, setDoc, getDoc }] = await Promise.all([
+      import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js"),
+      import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js")
+    ]);
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyBOjrYo1aLclJKJisTs3Q5JrGWsOIxqtRw",
+      authDomain: "social-quiz-a9579.firebaseapp.com",
+      projectId: "social-quiz-a9579",
+      storageBucket: "social-quiz-a9579.firebasestorage.app",
+      messagingSenderId: "405193951436",
+      appId: "1:405193951436:web:b40ffa20681e5c7f9c5a69",
+      measurementId: "G-ZC4GNQQQWN"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    window._db = db;
+    window._dbFns = { doc, setDoc, getDoc };
+    window._firebaseReady = true;
+  } catch (e) {
+    console.warn('Firebase init failed, fallback to local mode:', e);
+    window._firebaseReady = false;
+  } finally {
+    document.dispatchEvent(new Event('firebaseReady'));
+  }
 </script>
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -5309,7 +5323,7 @@ const QUESTIONS = [
 {id:'sp_113_2_37',subject:'sp',year:113,session:2,num:37,categories:['sp_law_volunteer'],text:'依據我國志願服務法，志工應有之義務包含下列何者？①拒絕向受服務者收取報酬 ②遵守倫理守則之規定 ③參與志願服務運用單位所提供之教育訓練 ④撰寫個案服務紀錄 ⑤不得有在職或在學之身分 ⑥妥善使用志願服務證',options:['A.②③④⑥','B.①③④⑤','C.①②④⑥','D.①②③⑥'],answer:'D',explanation:'①正確，第15條第七項 ②正確，第15條第七項 ③正確，第15條第七項 ④錯誤，這是社工該做的 ⑤錯誤，沒有此義務，很多志工都有自己的工作或是學生志工 ⑥正確，第15條第七項 看更多：志願服務法'},
 {id:'sp_113_2_38',subject:'sp',year:113,session:2,num:38,categories:['sp_law_pension'],text:'依據國民年金法規定，關於請領身心障礙年金給付之敘述，下列何者正確？',options:['A.經評估有工作能力的人士，被保險期間內罹患疾病經治療終止，症狀固定','B.被保險人遭受傷害或罹患疾病，症狀固定且再行治療無效，並經評估有工作能力','C.被保險人於保險期間遭受重傷或罹患嚴重疾病，經治療一年以上尚未痊癒，且無工作能力','D.被保險人於保險期間遭受輕傷或罹患輕微疾病，經治療後已完全康復'],answer:'C',explanation:'(A)錯誤，因為具備工作能力 (B)錯誤，因為具備工作能力 (C)正確，第33條第一項第一款 (D)錯誤，因治療後已完全康復 看更多：國民年金法'},
 {id:'sp_113_2_39',subject:'sp',year:113,session:2,num:39,categories:['sp_law_ltc'],text:'依據長期照顧服務法規定，下列何者非屬居家式長照服務之項目？',options:['A.臨時住宿服務','B.家事服務','C.輔具服務','D.日常生活照顧服務'],answer:'A',explanation:'(A)錯誤，這是屬於社區式長照服務 (B)正確，第10條第三項 (C)正確，第10條第五項 (D)正確，第10條第二項 看更多：長期照顧服務法'},
-{id:'sp_113_2_40',subject:'sp',year:113,session:2,num:40,categories:['sp_law_ltc'],text:'依據長期照顧服務機構法人條例，下列何者非屬其法案通過之後，賦予長期照顧服務機構的特色？',options:['A.規範長期照顧服務機構法人不得營利','B.實質規範財務監管責任','C.實質規劃長期照顧法人的社員組成、組織章程','D.促進異業整合與規劃投資架構'],answer:'A',explanation:'(A)錯誤，無此規範(B)正確，第14條(C)正確，第31條(D)正確，第16條},
+{id:'sp_113_2_40',subject:'sp',year:113,session:2,num:40,categories:['sp_law_ltc'],text:'依據長期照顧服務機構法人條例，下列何者非屬其法案通過之後，賦予長期照顧服務機構的特色？',options:['A.規範長期照顧服務機構法人不得營利','B.實質規範財務監管責任','C.實質規劃長期照顧法人的社員組成、組織章程','D.促進異業整合與規劃投資架構'],answer:'A',explanation:'(A)錯誤，無此規範(B)正確，第14條(C)正確，第31條(D)正確，第16條'},
 
 // ===== 114年上 社會政策與立法（40題）=====
 {id:'sp_114_1_01',subject:'sp',year:114,session:1,num:1,categories:['sp_policy_ideology'],text:'社會排除成為當代社會政策的核心概念之一，下列敘述何者不是社會排除概念所強調的重點？',options:['A.社會排除是多面向的概念','B.社會排除所指涉的是一個靜態的結果','C.社會排除更多是來自於因為結構因素','D.社會排除涉及到社會心理層面的影響'],answer:'B',explanation:'(A)正確，社會排除的概念，所指的面向並非只有經濟匱乏，而是多面向的排除，造成經濟面和非經濟面的匱乏，以及剝奪的動態累積過程(B)錯誤，是一個剝奪的動態累積過程(C)正確，社會排除多與結構性因素有關，例如經濟制度、社會制度設計，而非僅是個人選擇或能力不足(D)正確，社會排除是多面向的排除，也有涉及到社會心理層面的影響'},
@@ -6831,8 +6845,18 @@ function loadLocalBackup() {
 async function loadUserData() {
   const local = loadLocalBackup();
   if (local) userData = {...userData, ...local};
+
   try {
-    if (!window._firebaseReady) await new Promise(r => document.addEventListener('firebaseReady', r, {once:true}));
+    await Promise.race([
+      new Promise(r => {
+        if (typeof window._firebaseReady !== 'undefined') return r();
+        document.addEventListener('firebaseReady', r, {once:true});
+      }),
+      new Promise(r => setTimeout(r, 1500))
+    ]);
+
+    if (!window._firebaseReady || !window._db || !window._dbFns) return;
+
     const {doc, getDoc} = window._dbFns;
     const snap = await getDoc(doc(window._db, 'users', USER_ID));
     if (snap.exists()) {
@@ -6846,6 +6870,7 @@ async function loadUserData() {
 async function saveUserData() {
   saveLocalBackup();
   try {
+    if (!window._firebaseReady || !window._db || !window._dbFns) return;
     const {doc, setDoc} = window._dbFns;
     await setDoc(doc(window._db, 'users', USER_ID), userData);
   } catch(e) { console.warn('Firebase save:', e); }
