@@ -1,5 +1,5 @@
 // ==================== 狀態管理 ====================
-const DEFAULT_USER_DATA = { answers:{}, hearts:{}, streak:0, progress:{}, correctCounts:{} };
+const DEFAULT_USER_DATA = { answers:{}, hearts:{}, streak:0, progress:{}, correctCounts:{}, subcategoryRuns:{} };
 let userData = structuredClone(DEFAULT_USER_DATA);
 let quizState = { questions:[], currentIndex:0, selectedAnswer:null, confirmed:false, sessionCorrect:0, isHeartMode:false, heartSubjectId:null };
 let currentSubjectId = null;
@@ -19,6 +19,7 @@ function normalizeUserData(raw) {
     streak: Number.isFinite(Number(safe.streak)) ? Number(safe.streak) : 0,
     progress: safe.progress && typeof safe.progress === 'object' && !Array.isArray(safe.progress) ? safe.progress : {},
     correctCounts: safe.correctCounts && typeof safe.correctCounts === 'object' && !Array.isArray(safe.correctCounts) ? safe.correctCounts : {},
+    subcategoryRuns: safe.subcategoryRuns && typeof safe.subcategoryRuns === 'object' && !Array.isArray(safe.subcategoryRuns) ? safe.subcategoryRuns : {},
   };
 }
 
@@ -128,6 +129,33 @@ function saveCurrentQuizProgress(markNext=false) {
     updatedAt: Date.now()
   };
   saveUserData();
+}
+
+function recordCompletedSubcategoryRun() {
+  if (!currentSubcategoryId) return;
+  if (quizState.isHeartMode) return;
+  const total = quizState.questions?.length || 0;
+  if (total===0) return;
+  const correct = quizState.sessionCorrect || 0;
+  const accuracy = Math.round(correct / total * 100);
+  userData.subcategoryRuns = userData.subcategoryRuns || {};
+  userData.subcategoryRuns[currentSubcategoryId] = userData.subcategoryRuns[currentSubcategoryId] || [];
+  userData.subcategoryRuns[currentSubcategoryId].push({
+    finishedAt: Date.now(),
+    total,
+    correct,
+    accuracy
+  });
+  saveUserData();
+}
+
+function getSubcategoryRunSummary(subcategoryId) {
+  const runs = userData.subcategoryRuns?.[subcategoryId] || [];
+  if (!runs.length) return null;
+  const last = runs[runs.length - 1];
+  const best = Math.max(...runs.map(r => Number(r.accuracy) || 0));
+  const avg = Math.round(runs.reduce((sum, r) => sum + (Number(r.accuracy) || 0), 0) / runs.length);
+  return { count: runs.length, last, best, avg };
 }
 function clearQuizProgress(progressKey) {
   if (!progressKey || !userData.progress?.[progressKey]) return;
@@ -338,7 +366,8 @@ function showSubcategory(subcategoryId) {
   const correct = subQs.filter(q => userData.answers[q.id]?.correct).length;
   const acc = answered>0 ? Math.round(correct/answered*100) : 0;
   const resume = userData.progress?.[subcategoryId];
-  document.getElementById('catStatsRow').innerHTML = `已答 <strong>${answered}/${subQs.length}</strong> 題 &nbsp;·&nbsp; 正確率 <strong>${acc}%</strong>${resume ? ' &nbsp;·&nbsp; <span style="color:var(--accent)">可續答</span>' : ''}`;
+  const runSummary = getSubcategoryRunSummary(subcategoryId);
+  document.getElementById('catStatsRow').innerHTML = `已答 <strong>${answered}/${subQs.length}</strong> 題 &nbsp;·&nbsp; 正確率 <strong>${acc}%</strong>${resume ? ' &nbsp;·&nbsp; <span style="color:var(--accent)">可續答</span>' : ''}${runSummary ? ` &nbsp;·&nbsp; 已完整練習 <strong>${runSummary.count}</strong> 次 &nbsp;·&nbsp; 最近一次 <strong>${runSummary.last.accuracy}%</strong>` : ''}`;
 
   if (categoryStartBtn) categoryStartBtn.style.display = 'inline-flex';
   document.getElementById('categoryNotesBtn').textContent = '📖 查看本子分類重點筆記';
@@ -566,11 +595,18 @@ function confirmAnswer() {
 function nextQuestion() {
   quizState.currentIndex++;
   if (quizState.currentIndex >= quizState.questions.length) {
-    const progressKey = currentSubcategoryId || currentCategoryId;
-    if (!quizState.isHeartMode && progressKey) {
+    const finishedSubcategoryId = currentSubcategoryId;
+    const progressKey = quizState.progressKey || currentSubcategoryId || currentCategoryId;
+
+    if (finishedSubcategoryId && !quizState.isHeartMode) {
+      recordCompletedSubcategoryRun();
+    }
+
+    if (progressKey && userData.progress?.[progressKey]) {
       delete userData.progress[progressKey];
       saveUserData();
     }
+
     showToast(`練習完成！${quizState.sessionCorrect}/${quizState.questions.length}題正確`);
     setTimeout(() => exitQuiz(), 1200);
     return;
@@ -712,11 +748,27 @@ function renderStats() {
     });
   });
   html += `</tbody></table></div>`;
+
+  html += `
+    <div class="stats-section">
+      <h3>子分類完整練習紀錄</h3>
+      <table class="stats-table">
+        <thead><tr><th>科目</th><th>子分類</th><th>完成次數</th><th>最近一次</th><th>最佳</th><th>平均</th></tr></thead><tbody>`;
+  SUBJECTS.forEach(subj => {
+    subj.categories.forEach(cat => {
+      (cat.subcategories || []).forEach(sub => {
+        const summary = getSubcategoryRunSummary(sub.id);
+        if (!summary) return;
+        html += `<tr><td style="font-size:11px;color:var(--text-muted)">${subj.name}</td><td>${sub.name}</td><td>${summary.count}</td><td>${summary.last.correct}/${summary.last.total}（${summary.last.accuracy}%）</td><td>${summary.best}%</td><td>${summary.avg}%</td></tr>`;
+      });
+    });
+  });
+  html += `</tbody></table></div>`;
   document.getElementById('statsContent').innerHTML = html;
 }
 function confirmReset() {
   if (confirm('確定要重置所有作答記錄和愛心題目嗎？此操作無法還原。')) {
-    userData = {answers:{}, hearts:{}, streak:0};
+    userData = structuredClone(DEFAULT_USER_DATA);
     saveUserData();
     renderStats();
     showToast('已重置所有記錄');
