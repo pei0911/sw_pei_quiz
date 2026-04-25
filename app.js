@@ -5,6 +5,9 @@ let quizState = { questions:[], currentIndex:0, selectedAnswer:null, confirmed:f
 let currentSubjectId = null;
 let currentCategoryId = null;
 let currentSubcategoryId = null;
+let currentExamSubjectId = null;
+let currentExamYear = null;
+let currentExamSession = null;
 const USER_ID = 'default_user';
 
 // ==================== Firebase ====================
@@ -86,6 +89,15 @@ function makeHeartProgressKey(subjectId=null, subcategoryId=null) {
   if (subjectId) return `heart_subject_${subjectId}`;
   return 'heart_all';
 }
+function makeExamProgressKey(subjectId, year, session) {
+  return `exam_${subjectId}_${year}_${session}`;
+}
+function getSessionLabel(session) {
+  return Number(session) === 1 ? '上' : '下';
+}
+function getSubjectName(subjectId) {
+  return SUBJECTS.find(s => s.id === subjectId)?.name || subjectId;
+}
 function buildQuizState(questions, opts={}) {
   return {
     questions,
@@ -96,7 +108,11 @@ function buildQuizState(questions, opts={}) {
     isHeartMode: !!opts.isHeartMode,
     heartSubjectId: opts.heartSubjectId || null,
     heartSubcategoryId: opts.heartSubcategoryId || null,
-    progressKey: opts.progressKey || null
+    progressKey: opts.progressKey || null,
+    practiceMode: opts.practiceMode || 'category',
+    examSubjectId: opts.examSubjectId || null,
+    examYear: opts.examYear || null,
+    examSession: opts.examSession || null
   };
 }
 function ensureProgressStore() {
@@ -126,6 +142,10 @@ function saveCurrentQuizProgress(markNext=false) {
     subjectId: currentSubjectId || null,
     categoryId: currentCategoryId || null,
     subcategoryId: currentSubcategoryId || null,
+    practiceMode: quizState.practiceMode || 'category',
+    examSubjectId: quizState.examSubjectId || currentExamSubjectId || null,
+    examYear: quizState.examYear || currentExamYear || null,
+    examSession: quizState.examSession || currentExamSession || null,
     updatedAt: Date.now()
   };
   saveUserData();
@@ -162,7 +182,7 @@ function clearQuizProgress(progressKey) {
   delete userData.progress[progressKey];
   saveUserData();
 }
-function startSavedOrFreshQuiz({progressKey, questions, isHeartMode=false, heartSubjectId=null, heartSubcategoryId=null, label='練習'}) {
+function startSavedOrFreshQuiz({progressKey, questions, isHeartMode=false, heartSubjectId=null, heartSubcategoryId=null, practiceMode='category', examSubjectId=null, examYear=null, examSession=null, label='練習'}) {
   if (!questions || questions.length===0) {
     showToast('此分類目前尚無題目');
     return;
@@ -177,7 +197,11 @@ function startSavedOrFreshQuiz({progressKey, questions, isHeartMode=false, heart
         isHeartMode,
         heartSubjectId,
         heartSubcategoryId,
-        progressKey
+        progressKey,
+        practiceMode: saved.practiceMode || practiceMode,
+        examSubjectId: saved.examSubjectId || examSubjectId,
+        examYear: saved.examYear || examYear,
+        examSession: saved.examSession || examSession
       });
       showScreen('quiz');
       renderQuestion();
@@ -192,6 +216,10 @@ function startSavedOrFreshQuiz({progressKey, questions, isHeartMode=false, heart
     isHeartMode: !!isHeartMode,
     heartSubjectId: heartSubjectId || null,
     heartSubcategoryId: heartSubcategoryId || null,
+    practiceMode,
+    examSubjectId: examSubjectId || null,
+    examYear: examYear || null,
+    examSession: examSession || null,
     subjectId: currentSubjectId || null,
     categoryId: currentCategoryId || null,
     subcategoryId: currentSubcategoryId || null,
@@ -202,7 +230,11 @@ function startSavedOrFreshQuiz({progressKey, questions, isHeartMode=false, heart
     isHeartMode,
     heartSubjectId,
     heartSubcategoryId,
-    progressKey
+    progressKey,
+    practiceMode,
+    examSubjectId,
+    examYear,
+    examSession
   });
   showScreen('quiz');
   renderQuestion();
@@ -280,11 +312,15 @@ function showSubject(subjectId) {
   currentSubjectId = subjectId;
   currentCategoryId = null;
   currentSubcategoryId = null;
+  currentExamSubjectId = null;
+  currentExamYear = null;
+  currentExamSession = null;
   const subj = SUBJECTS.find(s => s.id===subjectId);
   document.getElementById('subjectTitle').textContent = subj.name;
   document.getElementById('subjectDesc').textContent = subj.desc;
   const list = document.getElementById('categoryList');
   list.innerHTML = '';
+  renderExamPracticeSection(subj, list);
   subj.categories.forEach(cat => {
     const subIds = (cat.subcategories || []).map(sc => sc.id);
     const catQs = QUESTIONS.filter(q => q.categories.some(id => subIds.includes(id)));
@@ -300,6 +336,39 @@ function showSubject(subjectId) {
   });
   showScreen('subject');
 }
+function renderExamPracticeSection(subj, list) {
+  const exams = [...new Map(
+    QUESTIONS
+      .filter(q => q.subject === subj.id)
+      .map(q => [`${q.year}_${q.session}`, {year:q.year, session:q.session}])
+  ).values()].sort((a,b) => a.year === b.year ? a.session - b.session : a.year - b.year);
+
+  if (!exams.length) return;
+
+  const sectionTitle = document.createElement('div');
+  sectionTitle.style.cssText = 'font-size:13px;font-weight:700;color:var(--text-secondary);margin:6px 0 8px';
+  sectionTitle.textContent = '依年度／上下練習';
+  list.appendChild(sectionTitle);
+
+  exams.forEach(exam => {
+    const examQs = QUESTIONS.filter(q => q.subject === subj.id && q.year === exam.year && q.session === exam.session);
+    const answered = examQs.filter(q => userData.answers[q.id]).length;
+    const correct = examQs.filter(q => userData.answers[q.id]?.correct).length;
+    const acc = answered>0 ? Math.round(correct/answered*100) : 0;
+    const progressKey = makeExamProgressKey(subj.id, exam.year, exam.session);
+    const resume = userData.progress?.[progressKey];
+    const card = document.createElement('div');
+    card.className = 'category-card';
+    card.innerHTML = `<div><h4>${exam.year}年${getSessionLabel(exam.session)} ${subj.name}${resume ? ' <span style="font-size:11px;color:var(--accent)">（可續答）</span>' : ''}</h4><p>${examQs.length}題 · 已答${answered}題 · 正確率${acc}%</p></div><span class="cat-arrow">›</span>`;
+    card.onclick = () => startExamQuiz(subj.id, exam.year, exam.session);
+    list.appendChild(card);
+  });
+
+  const categoryTitle = document.createElement('div');
+  categoryTitle.style.cssText = 'font-size:13px;font-weight:700;color:var(--text-secondary);margin:18px 0 8px';
+  categoryTitle.textContent = '依目前分類練習';
+  list.appendChild(categoryTitle);
+}
 function openSubjectNotes() {
   const note = NOTES[currentSubjectId];
   if (note) openModal(note.title, note.content);
@@ -310,6 +379,9 @@ function openSubjectNotes() {
 function showCategory(categoryId) {
   currentCategoryId = categoryId;
   currentSubcategoryId = null;
+  currentExamSubjectId = null;
+  currentExamYear = null;
+  currentExamSession = null;
 
   const categoryStartBtn = document.querySelector('#screen-category .btn-primary');
   const cat = SUBJECTS.flatMap(s=>s.categories).find(c=>c.id===categoryId);
@@ -353,6 +425,9 @@ function showCategory(categoryId) {
 
 function showSubcategory(subcategoryId) {
   currentSubcategoryId = subcategoryId;
+  currentExamSubjectId = null;
+  currentExamYear = null;
+  currentExamSession = null;
   const categoryStartBtn = document.querySelector('#screen-category .btn-primary');
   const { cat, sub } = getCategoryAndSubcategory(subcategoryId);
   if (!sub) { showToast('找不到子分類'); return; }
@@ -426,7 +501,30 @@ function startQuiz() {
     progressKey: targetId,
     questions: qs,
     isHeartMode: false,
+    practiceMode: currentSubcategoryId ? 'subcategory' : 'category',
     label: currentSubcategoryId ? '子分類練習' : '主分類練習'
+  });
+}
+function startExamQuiz(subjectId, year, session) {
+  currentSubjectId = subjectId;
+  currentCategoryId = null;
+  currentSubcategoryId = null;
+  currentExamSubjectId = subjectId;
+  currentExamYear = year;
+  currentExamSession = session;
+
+  const qs = QUESTIONS.filter(q => q.subject === subjectId && Number(q.year) === Number(year) && Number(q.session) === Number(session));
+  if (qs.length===0) { showToast('此年度場次目前尚無題目'); return; }
+
+  startSavedOrFreshQuiz({
+    progressKey: makeExamProgressKey(subjectId, year, session),
+    questions: qs,
+    isHeartMode: false,
+    practiceMode: 'exam',
+    examSubjectId: subjectId,
+    examYear: year,
+    examSession: session,
+    label: `${year}年${getSessionLabel(session)} ${getSubjectName(subjectId)}考古題練習`
   });
 }
 function startHeartQuizAll() {
@@ -549,7 +647,7 @@ function confirmAnswer() {
     selectedAnswer: quizState.selectedAnswer,
     correct,
     answeredAt: Date.now(),
-    mode: quizState.isHeartMode ? 'heart' : 'normal'
+    mode: quizState.isHeartMode ? 'heart' : (quizState.practiceMode || 'normal')
   };
 
   document.querySelectorAll('.option-btn').forEach(btn => { btn.disabled=true; btn.style.borderColor=''; btn.style.background=''; });
@@ -598,7 +696,7 @@ function nextQuestion() {
     const finishedSubcategoryId = currentSubcategoryId;
     const progressKey = quizState.progressKey || currentSubcategoryId || currentCategoryId;
 
-    if (finishedSubcategoryId && !quizState.isHeartMode) {
+    if (finishedSubcategoryId && !quizState.isHeartMode && quizState.practiceMode === 'subcategory') {
       recordCompletedSubcategoryRun();
     }
 
@@ -616,6 +714,7 @@ function nextQuestion() {
 
 function exitQuiz() {
   if (quizState.isHeartMode) showScreen('heart');
+  else if (quizState.practiceMode === 'exam' && (currentExamSubjectId || currentSubjectId)) showSubject(currentExamSubjectId || currentSubjectId);
   else if (currentSubcategoryId) showSubcategory(currentSubcategoryId);
   else if (currentCategoryId) showCategory(currentCategoryId);
   else showScreen('home');
@@ -745,6 +844,27 @@ function renderStats() {
       const cor = qs.filter(q=>userData.answers[q.id]?.correct).length;
       const a = ans>0 ? Math.round(cor/ans*100) : 0;
       html += `<tr><td style="font-size:11px;color:var(--text-muted)">${subj.name}</td><td>${cat.name}</td><td>${ans}/${qs.length}</td><td><div class="acc-bar-wrap"><div class="acc-bar"><div class="acc-fill" style="width:${a}%"></div></div><span class="acc-label">${a}%</span></div></td></tr>`;
+    });
+  });
+  html += `</tbody></table></div>`;
+
+  html += `
+    <div class="stats-section">
+      <h3>年度場次正確率</h3>
+      <table class="stats-table">
+        <thead><tr><th>科目</th><th>年度場次</th><th>已答</th><th>正確率</th></tr></thead><tbody>`;
+  SUBJECTS.forEach(subj => {
+    const exams = [...new Map(
+      QUESTIONS
+        .filter(q => q.subject === subj.id)
+        .map(q => [`${q.year}_${q.session}`, {year:q.year, session:q.session}])
+    ).values()].sort((a,b) => a.year === b.year ? a.session - b.session : a.year - b.year);
+    exams.forEach(exam => {
+      const qs = QUESTIONS.filter(q => q.subject===subj.id && q.year===exam.year && q.session===exam.session);
+      const ans = qs.filter(q=>userData.answers[q.id]).length;
+      const cor = qs.filter(q=>userData.answers[q.id]?.correct).length;
+      const a = ans>0 ? Math.round(cor/ans*100) : 0;
+      html += `<tr><td style="font-size:11px;color:var(--text-muted)">${subj.name}</td><td>${exam.year}年${getSessionLabel(exam.session)}</td><td>${ans}/${qs.length}</td><td><div class="acc-bar-wrap"><div class="acc-bar"><div class="acc-fill" style="width:${a}%"></div></div><span class="acc-label">${a}%</span></div></td></tr>`;
     });
   });
   html += `</tbody></table></div>`;
