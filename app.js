@@ -1,5 +1,5 @@
 // ==================== 狀態管理 ====================
-const DEFAULT_USER_DATA = { answers:{}, hearts:{}, streak:0, progress:{}, correctCounts:{}, subcategoryRuns:{} };
+const DEFAULT_USER_DATA = { answers:{}, hearts:{}, streak:0, progress:{}, correctCounts:{}, subcategoryRuns:{}, typedNotes:{} };
 let userData = structuredClone(DEFAULT_USER_DATA);
 let quizState = { questions:[], currentIndex:0, selectedAnswer:null, confirmed:false, sessionCorrect:0, isHeartMode:false, heartSubjectId:null };
 let currentSubjectId = null;
@@ -23,6 +23,7 @@ function normalizeUserData(raw) {
     progress: safe.progress && typeof safe.progress === 'object' && !Array.isArray(safe.progress) ? safe.progress : {},
     correctCounts: safe.correctCounts && typeof safe.correctCounts === 'object' && !Array.isArray(safe.correctCounts) ? safe.correctCounts : {},
     subcategoryRuns: safe.subcategoryRuns && typeof safe.subcategoryRuns === 'object' && !Array.isArray(safe.subcategoryRuns) ? safe.subcategoryRuns : {},
+    typedNotes: safe.typedNotes && typeof safe.typedNotes === 'object' && !Array.isArray(safe.typedNotes) ? safe.typedNotes : {},
   };
 }
 
@@ -248,6 +249,7 @@ function showScreen(id) {
   if (id==='home') renderHome();
   if (id==='heart') renderHeartScreen();
   if (id==='stats') renderStats();
+  if (id==='typenotes') renderTypedNotesScreen();
 }
 function showToast(msg) {
   const t = document.getElementById('toast');
@@ -624,6 +626,8 @@ function renderQuestion() {
   document.getElementById('nextBtn').style.display = 'none';
   const pauseBtn = document.querySelector('#quizActions .btn-secondary');
   if (pauseBtn) pauseBtn.textContent = '暫停並退出';
+
+  injectAnnotationUI(q.id);
 }
 
 function selectOption(label) {
@@ -3576,3 +3580,440 @@ async function init() {
   }
 }
 init();
+
+// ==================== 打字筆記系統 ====================
+const TYPED_NOTES_KEY = 'quiz_typed_notes_v1';
+function _loadNotes() {
+  try { return JSON.parse(localStorage.getItem(TYPED_NOTES_KEY) || '{}'); } catch(e) { return {}; }
+}
+function _saveNotes(n) {
+  try { localStorage.setItem(TYPED_NOTES_KEY, JSON.stringify(n)); } catch(e) {}
+}
+function getTypedNote(qId) { return _loadNotes()[qId]?.text || ''; }
+function setTypedNote(qId, text) {
+  const n = _loadNotes();
+  if (text.trim() === '') delete n[qId];
+  else n[qId] = { text, updatedAt: Date.now() };
+  _saveNotes(n);
+}
+function deleteTypedNote(qId) {
+  const n = _loadNotes(); delete n[qId]; _saveNotes(n);
+}
+function _esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ==================== 我的筆記頁面 ====================
+function showTypedNotesScreen() {
+  showScreen('typenotes');
+}
+function _buildNoteCard(qId, note) {
+  const q = QUESTIONS.find(q => q.id === qId);
+  if (!q) return null;
+  const sessionLabel = q.session === 1 ? '上' : '下';
+  const allCats = getAllCategoryNodes();
+  const catName = q.categories.map(c => allCats.find(x=>x.id===c)?.name||'').filter(Boolean).join('、');
+  const optionsHtml = Array.isArray(q.options) ? q.options.map((opt, i) => {
+    const lbl = ['A','B','C','D'][i];
+    const isAns = lbl === q.answer || opt.startsWith(q.answer + '.');
+    return `<div class="typenote-option${isAns?' typenote-option-answer':''}">${_esc(opt)}</div>`;
+  }).join('') : '';
+  const card = document.createElement('div');
+  card.className = 'typenote-card';
+  card.innerHTML = `
+    <div class="typenote-card-meta">
+      <span class="q-badge year">${q.year}年${sessionLabel} 第${q.num}題</span>
+      ${catName ? `<span class="q-badge cat">${catName}</span>` : ''}
+    </div>
+    <div class="typenote-card-qtext">${_esc(q.text)}</div>
+    ${optionsHtml ? `<div class="typenote-options">${optionsHtml}</div>` : ''}
+    <div class="typenote-card-note">${note.text}</div>
+    <div class="typenote-card-footer">
+      <button class="typenote-del-btn" onclick="deleteNoteFromList('${qId}', this)">刪除此筆記</button>
+    </div>
+  `;
+  return card;
+}
+
+function renderTypedNotesScreen() {
+  const list = document.getElementById('typeNotesList');
+  if (!list) return;
+  const notes = _loadNotes();
+  const ids = Object.keys(notes);
+  if (ids.length === 0) {
+    list.innerHTML = `<div class="typenotes-empty">
+      <div class="empty-icon">📝</div>
+      <p>還沒有任何打字筆記</p>
+      <p style="margin-top:6px">在練習題目下方輸入筆記，儲存後會出現在這裡</p>
+    </div>`;
+    return;
+  }
+  list.innerHTML = '';
+
+  SUBJECTS.forEach(subj => {
+    // 確認此科目有任何筆記
+    const subjQIds = ids.filter(id => {
+      const q = QUESTIONS.find(q => q.id === id);
+      return q && q.subject === subj.id;
+    });
+    if (!subjQIds.length) return;
+
+    // ── 科目區塊（可展開/收合）──
+    const subjBlock = document.createElement('div');
+    subjBlock.className = 'tn-subject-block';
+
+    const subjHeader = document.createElement('div');
+    subjHeader.className = 'tn-subject-header';
+    subjHeader.innerHTML = `<span class="tn-arrow">▼</span> ${subj.name} <span class="tn-count">${subjQIds.length} 則</span>`;
+    subjHeader.addEventListener('click', () => {
+      subjBlock.classList.toggle('collapsed');
+    });
+    subjBlock.appendChild(subjHeader);
+
+    const subjBody = document.createElement('div');
+    subjBody.className = 'tn-subject-body';
+
+    // ── 類別（categories）層 ──
+    subj.categories.forEach(cat => {
+      const subCatIds = (cat.subcategories || []).map(sc => sc.id);
+      // 找屬於此類別（含子類別）的筆記
+      const catQIds = subjQIds.filter(id => {
+        const q = QUESTIONS.find(q => q.id === id);
+        return q && q.categories.some(c => c === cat.id || subCatIds.includes(c));
+      });
+      if (!catQIds.length) return;
+
+      const catBlock = document.createElement('div');
+      catBlock.className = 'tn-cat-block';
+
+      const catHeader = document.createElement('div');
+      catHeader.className = 'tn-cat-header';
+      catHeader.innerHTML = `<span class="tn-arrow">▼</span> ${cat.name} <span class="tn-count">${catQIds.length} 則</span>`;
+      catHeader.addEventListener('click', () => {
+        catBlock.classList.toggle('collapsed');
+      });
+      catBlock.appendChild(catHeader);
+
+      const catBody = document.createElement('div');
+      catBody.className = 'tn-cat-body';
+
+      // ── 子類別（subcategories）層 ──
+      if (cat.subcategories && cat.subcategories.length > 0) {
+        cat.subcategories.forEach(sub => {
+          const subQIds = catQIds.filter(id => {
+            const q = QUESTIONS.find(q => q.id === id);
+            return q && q.categories.includes(sub.id);
+          });
+          if (!subQIds.length) return;
+
+          const subBlock = document.createElement('div');
+          subBlock.className = 'tn-sub-block';
+
+          const subHeader = document.createElement('div');
+          subHeader.className = 'tn-sub-header';
+          subHeader.innerHTML = `<span class="tn-arrow">▼</span> ${sub.name} <span class="tn-count">${subQIds.length} 則</span>`;
+          subHeader.addEventListener('click', () => {
+            subBlock.classList.toggle('collapsed');
+          });
+          subBlock.appendChild(subHeader);
+
+          const subBody = document.createElement('div');
+          subBody.className = 'tn-sub-body';
+          subQIds.forEach(qId => {
+            const card = _buildNoteCard(qId, notes[qId]);
+            if (card) subBody.appendChild(card);
+          });
+          subBlock.appendChild(subBody);
+          catBody.appendChild(subBlock);
+        });
+
+        // 不屬於任何子類別、但屬於此 category 的筆記
+        const directQIds = catQIds.filter(id => {
+          const q = QUESTIONS.find(q => q.id === id);
+          return q && !q.categories.some(c => subCatIds.includes(c));
+        });
+        directQIds.forEach(qId => {
+          const card = _buildNoteCard(qId, notes[qId]);
+          if (card) catBody.appendChild(card);
+        });
+      } else {
+        catQIds.forEach(qId => {
+          const card = _buildNoteCard(qId, notes[qId]);
+          if (card) catBody.appendChild(card);
+        });
+      }
+
+      catBlock.appendChild(catBody);
+      subjBody.appendChild(catBlock);
+    });
+
+    // 不屬於任何 category 的筆記
+    const uncatIds = subjQIds.filter(id => {
+      const q = QUESTIONS.find(q => q.id === id);
+      const allSubIds = subj.categories.flatMap(c => [c.id, ...(c.subcategories||[]).map(s=>s.id)]);
+      return q && !q.categories.some(c => allSubIds.includes(c));
+    });
+    uncatIds.forEach(qId => {
+      const card = _buildNoteCard(qId, notes[qId]);
+      if (card) subjBody.appendChild(card);
+    });
+
+    subjBlock.appendChild(subjBody);
+    list.appendChild(subjBlock);
+  });
+}
+function deleteNoteFromList(qId, btn) {
+  if (!confirm('確定刪除這則筆記？')) return;
+  deleteTypedNote(qId);
+  btn.closest('.typenote-card').remove();
+  if (document.querySelectorAll('#typeNotesList .typenote-card').length === 0) renderTypedNotesScreen();
+  showToast('筆記已刪除');
+}
+
+// ==================== 手寫批註（疊加在題目上）====================
+const DRAW_COLORS = ['#2d3436','#c0392b','#2980b9','#27ae60','#e67e22','#8e44ad'];
+let _draw = { tool:'pen', color:'#2d3436', size:3, active:false, lastX:0, lastY:0, canvas:null, ctx:null, history:[] };
+let _drawOverlayActive = false;
+
+function injectAnnotationUI(qId) {
+  const container = document.getElementById('questionContainer');
+  if (!container) return;
+  // 重置手寫狀態
+  _draw.active = false; _draw.history = []; _draw.canvas = null; _draw.ctx = null;
+  _drawOverlayActive = false;
+
+  const card = container.querySelector('.question-card');
+  if (card) {
+    card.style.position = 'relative';
+    // 浮動工具列（預設隱藏）
+    const toolbar = document.createElement('div');
+    toolbar.id = 'overlayToolbar';
+    toolbar.className = 'overlay-toolbar';
+    toolbar.style.display = 'none';
+    toolbar.innerHTML =
+      '<button class="draw-tool-btn active" id="drawBtn_pen" onclick="setDrawTool(\'pen\')">🖊 筆</button>' +
+      '<button class="draw-tool-btn" id="drawBtn_eraser" onclick="setDrawTool(\'eraser\')">⬜ 橡皮擦</button>' +
+      DRAW_COLORS.map(c =>
+        `<div class="draw-color-swatch${c===_draw.color?' active':''}" data-color="${c}" style="background:${c}" onclick="setDrawColor('${c}')"></div>`
+      ).join('') +
+      `<input class="draw-size-slider" type="range" min="1" max="12" value="${_draw.size}" oninput="setDrawSize(this.value)" title="筆粗細" style="width:56px">` +
+      '<button class="draw-tool-btn" onclick="undoDraw()" title="復原">↩ 復原</button>' +
+      '<button class="draw-tool-btn" onclick="clearDraw()" title="清除全部" style="color:#c0392b">🗑 清除</button>';
+    card.appendChild(toolbar);
+
+    // 透明覆蓋 canvas
+    const cv = document.createElement('canvas');
+    cv.id = 'drawCanvas';
+    cv.className = 'draw-overlay-canvas';
+    cv.style.pointerEvents = 'none'; // 預設不攔截點擊，可正常作答
+    card.appendChild(cv);
+  }
+
+  // 控制按鈕 + 打字筆記（在 card 下方）
+  const note = getTypedNote(qId);
+  const hasNote = note.trim().length > 0;
+  const wrap = document.createElement('div');
+  wrap.id = 'annotationWrap';
+  wrap.innerHTML =
+    '<div class="drawing-section">' +
+      '<button class="drawing-toggle-btn" id="drawToggleBtn" onclick="toggleDrawOverlay()">✏️ 開啟手寫模式</button>' +
+    '</div>' +
+    '<div class="typed-note-section">' +
+      `<button class="typed-note-toggle-btn ${hasNote?'has-note':''}" id="tnBtn_${qId}" onclick="toggleTypedNotePanel('${qId}')">` +
+        (hasNote ? '📝 我的筆記 <span style="font-size:11px;opacity:.8">（已有內容）</span>' : '📝 新增打字筆記') +
+      '</button>' +
+      `<div class="typed-note-panel" id="tnPanel_${qId}">` +
+        '<div class="tn-format-toolbar">' +
+          `<button class="tn-fmt-btn" onclick="tnFmt('${qId}','bold')" title="粗體"><b>B</b></button>` +
+          `<button class="tn-fmt-btn" onclick="tnFmt('${qId}','underline')" title="底線"><u>U</u></button>` +
+          `<button class="tn-fmt-btn" onclick="tnColor('${qId}','#000000')" title="黑色" style="color:#000">A</button>` +
+          `<button class="tn-fmt-btn" onclick="tnColor('${qId}','#1a73e8')" title="藍色" style="color:#1a73e8">A</button>` +
+          `<button class="tn-fmt-btn" onclick="tnColor('${qId}','#c0392b')" title="紅色" style="color:#c0392b">A</button>` +
+          `<button class="tn-fmt-btn tn-fmt-hl" onclick="tnHighlight('${qId}',true)" title="黃色底色">黃底</button>` +
+          `<button class="tn-fmt-btn" onclick="tnHighlight('${qId}',false)" title="移除底色">無底色</button>` +
+        '</div>' +
+        `<div class="typed-note-editor" id="tnTA_${qId}" contenteditable="true" data-placeholder="在此輸入本題筆記，儲存後可在「我的筆記」頁面查閱…">${note}</div>` +
+        '<div class="typed-note-actions">' +
+          `<button class="btn-primary" style="font-size:13px;padding:7px 16px" onclick="saveTypedNoteUI('${qId}')">儲存筆記</button>` +
+          `<button class="btn-secondary" id="tnDelBtn_${qId}" style="font-size:13px;padding:7px 12px;color:var(--danger);border-color:var(--danger);display:${hasNote?'inline-block':'none'}" onclick="clearTypedNoteUI('${qId}')">刪除筆記</button>` +
+          `<span class="typed-note-saved-badge" id="tnBadge_${qId}">✓ 已儲存</span>` +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  container.appendChild(wrap);
+}
+
+function toggleDrawOverlay() {
+  _drawOverlayActive = !_drawOverlayActive;
+  const cv = document.getElementById('drawCanvas');
+  const toolbar = document.getElementById('overlayToolbar');
+  const btn = document.getElementById('drawToggleBtn');
+  if (_drawOverlayActive) {
+    if (cv) {
+      const card = cv.closest('.question-card');
+      const dpr = window.devicePixelRatio || 1;
+      const w = card ? card.offsetWidth : 300;
+      const h = card ? card.offsetHeight : 400;
+      cv.width = w * dpr;
+      cv.height = h * dpr;
+      cv.style.width = w + 'px';
+      cv.style.height = h + 'px';
+      const ctx = cv.getContext('2d');
+      ctx.scale(dpr, dpr);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      _draw.canvas = cv;
+      _draw.ctx = ctx;
+      cv.removeEventListener('pointerdown', _onDown);
+      cv.removeEventListener('pointermove', _onMove);
+      cv.removeEventListener('pointerup', _onUp);
+      cv.removeEventListener('pointercancel', _onUp);
+      cv.addEventListener('pointerdown', _onDown, {passive:false});
+      cv.addEventListener('pointermove', _onMove, {passive:false});
+      cv.addEventListener('pointerup', _onUp);
+      cv.addEventListener('pointercancel', _onUp);
+      cv.style.pointerEvents = 'auto';
+    }
+    if (toolbar) toolbar.style.display = 'flex';
+    if (btn) { btn.innerHTML = '✏️ 關閉手寫模式（恢復作答）'; btn.classList.add('active'); }
+  } else {
+    if (cv) cv.style.pointerEvents = 'none';
+    if (toolbar) toolbar.style.display = 'none';
+    if (btn) { btn.innerHTML = '✏️ 開啟手寫模式'; btn.classList.remove('active'); }
+  }
+}
+
+function _getPos(e) {
+  const r = _draw.canvas.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+function _onDown(e) {
+  e.preventDefault();
+  _draw.active = true;
+  const pos = _getPos(e);
+  _draw.lastX = pos.x; _draw.lastY = pos.y;
+  const snap = _draw.ctx.getImageData(0, 0, _draw.canvas.width, _draw.canvas.height);
+  _draw.history.push(snap);
+  if (_draw.history.length > 30) _draw.history.shift();
+  const ctx = _draw.ctx;
+  ctx.beginPath();
+  if (_draw.tool === 'eraser') {
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.arc(pos.x, pos.y, _draw.size * 3, 0, Math.PI*2); ctx.fill();
+  } else {
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = _draw.color;
+    ctx.arc(pos.x, pos.y, _draw.size/2, 0, Math.PI*2); ctx.fill();
+  }
+}
+function _onMove(e) {
+  if (!_draw.active) return;
+  e.preventDefault();
+  const pos = _getPos(e);
+  const ctx = _draw.ctx;
+  ctx.beginPath();
+  ctx.moveTo(_draw.lastX, _draw.lastY);
+  ctx.lineTo(pos.x, pos.y);
+  if (_draw.tool === 'eraser') {
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.lineWidth = _draw.size * 6;
+  } else {
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.strokeStyle = _draw.color;
+    ctx.lineWidth = _draw.size;
+  }
+  ctx.stroke();
+  _draw.lastX = pos.x; _draw.lastY = pos.y;
+}
+function _onUp() {
+  _draw.active = false;
+  if (_draw.ctx) _draw.ctx.globalCompositeOperation = 'source-over';
+}
+function setDrawTool(tool) {
+  _draw.tool = tool;
+  document.querySelectorAll('.draw-tool-btn').forEach(b => b.classList.remove('active','eraser-active'));
+  const btn = document.getElementById('drawBtn_' + tool);
+  if (btn) { btn.classList.add('active'); if (tool==='eraser') btn.classList.add('eraser-active'); }
+}
+function setDrawColor(c) {
+  _draw.color = c; _draw.tool = 'pen'; setDrawTool('pen');
+  document.querySelectorAll('.draw-color-swatch').forEach(s => s.classList.toggle('active', s.dataset.color===c));
+}
+function setDrawSize(v) { _draw.size = Number(v); }
+function undoDraw() {
+  if (!_draw.history.length || !_draw.ctx) return;
+  _draw.ctx.putImageData(_draw.history.pop(), 0, 0);
+}
+function clearDraw() {
+  if (!_draw.ctx || !_draw.canvas) return;
+  _draw.ctx.clearRect(0, 0, _draw.canvas.width, _draw.canvas.height);
+  _draw.history = [];
+}
+
+// ── 打字筆記 UI ──
+function toggleTypedNotePanel(qId) {
+  const panel = document.getElementById('tnPanel_' + qId);
+  if (!panel) return;
+  panel.classList.toggle('open');
+}
+function saveTypedNoteUI(qId) {
+  const editor = document.getElementById('tnTA_' + qId);
+  if (!editor) return;
+  const html = editor.innerHTML;
+  const plainText = editor.innerText || editor.textContent || '';
+  setTypedNote(qId, html);
+  const btn = document.getElementById('tnBtn_' + qId);
+  if (btn) {
+    if (plainText.trim()) {
+      btn.classList.add('has-note');
+      btn.innerHTML = '📝 我的筆記 <span style="font-size:11px;opacity:.8">（已有內容）</span>';
+    } else {
+      btn.classList.remove('has-note');
+      btn.textContent = '📝 新增打字筆記';
+    }
+  }
+  const badge = document.getElementById('tnBadge_' + qId);
+  if (badge) { badge.classList.add('show'); setTimeout(()=>badge.classList.remove('show'), 1800); }
+  const delBtn = document.getElementById('tnDelBtn_' + qId);
+  if (delBtn) delBtn.style.display = plainText.trim() ? 'inline-block' : 'none';
+}
+function clearTypedNoteUI(qId) {
+  if (!confirm('確定刪除這題的筆記？')) return;
+  deleteTypedNote(qId);
+  const editor = document.getElementById('tnTA_' + qId);
+  if (editor) editor.innerHTML = '';
+  const btn = document.getElementById('tnBtn_' + qId);
+  if (btn) { btn.classList.remove('has-note'); btn.textContent = '📝 新增打字筆記'; }
+  const delBtn = document.getElementById('tnDelBtn_' + qId);
+  if (delBtn) delBtn.style.display = 'none';
+  showToast('筆記已刪除');
+}
+
+// ── 打字筆記格式化工具 ──
+function _tnGetEditor(qId) {
+  return document.getElementById('tnTA_' + qId);
+}
+function tnFmt(qId, cmd) {
+  const editor = _tnGetEditor(qId);
+  if (!editor) return;
+  editor.focus();
+  document.execCommand(cmd, false, null);
+}
+function tnColor(qId, color) {
+  const editor = _tnGetEditor(qId);
+  if (!editor) return;
+  editor.focus();
+  document.execCommand('styleWithCSS', false, true);
+  document.execCommand('foreColor', false, color);
+}
+function tnHighlight(qId, on) {
+  const editor = _tnGetEditor(qId);
+  if (!editor) return;
+  editor.focus();
+  document.execCommand('styleWithCSS', false, true);
+  if (on) {
+    document.execCommand('hiliteColor', false, '#fff176');
+  } else {
+    document.execCommand('hiliteColor', false, 'transparent');
+  }
+}
