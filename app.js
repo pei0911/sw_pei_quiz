@@ -3779,7 +3779,7 @@ function injectAnnotationUI(qId) {
   const container = document.getElementById('questionContainer');
   if (!container) return;
   // 重置手寫狀態
-  _draw.active = false; _draw.history = []; _draw.canvas = null; _draw.ctx = null;
+  _draw.active = false; _draw.history = []; _draw.canvas = null; _draw.ctx = null; _draw.color = '#2d3436'; _draw.tool = 'pen';
   _drawOverlayActive = false;
 
   const card = container.querySelector('.question-card');
@@ -3791,12 +3791,7 @@ function injectAnnotationUI(qId) {
     toolbar.className = 'overlay-toolbar';
     toolbar.style.display = 'none';
     toolbar.innerHTML =
-      '<button class="draw-tool-btn active" id="drawBtn_pen" onclick="setDrawTool(\'pen\')">🖊 筆</button>' +
-      '<button class="draw-tool-btn" id="drawBtn_eraser" onclick="setDrawTool(\'eraser\')">⬜ 橡皮擦</button>' +
-      DRAW_COLORS.map(c =>
-        `<div class="draw-color-swatch${c===_draw.color?' active':''}" data-color="${c}" style="background:${c}" onclick="setDrawColor('${c}')"></div>`
-      ).join('') +
-      `<input class="draw-size-slider" type="range" min="1" max="12" value="${_draw.size}" oninput="setDrawSize(this.value)" title="筆粗細" style="width:56px">` +
+      `<input class="draw-size-slider" type="range" min="1" max="12" value="${_draw.size}" oninput="setDrawSize(this.value)" title="筆粗細" style="width:60px">` +
       '<button class="draw-tool-btn" onclick="undoDraw()" title="復原">↩ 復原</button>' +
       '<button class="draw-tool-btn" onclick="clearDraw()" title="清除全部" style="color:#c0392b">🗑 清除</button>';
     card.appendChild(toolbar);
