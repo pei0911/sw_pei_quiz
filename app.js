@@ -747,72 +747,110 @@ function renderHeartScreen() {
 
   list.innerHTML = '';
 
-  const allProgressKeys = Object.keys(userData.progress || {}).filter(k => k.startsWith('heart_'));
+  // 全部複習 / 續答按鈕
+  const globalProgress = userData.progress?.[makeHeartProgressKey()];
+  const topBar = document.createElement('div');
+  topBar.style.cssText = 'margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center';
+  topBar.innerHTML = globalProgress
+    ? `<button class="btn-secondary" onclick="startHeartQuizAll()">續答愛心總複習</button>`
+    : '';
+  list.appendChild(topBar);
 
   SUBJECTS.forEach(subj => {
     const subjHeartQs = QUESTIONS.filter(q => heartIds.includes(q.id) && q.subject===subj.id);
     if (subjHeartQs.length===0) return;
 
     const subjectProgress = userData.progress?.[makeHeartProgressKey(subj.id)];
-    const section = document.createElement('div');
-    section.className = 'heart-subject-section';
 
-    const subcatButtons = subj.categories.flatMap(cat => (cat.subcategories || []).map(sub => {
-      const subHeartQs = subjHeartQs.filter(q => q.categories.includes(sub.id));
-      if (subHeartQs.length===0) return '';
-      const subProgress = userData.progress?.[makeHeartProgressKey(null, sub.id)];
-      return `<button class="heart-practice-cat-btn" style="margin:4px 6px 0 0" onclick="startHeartQuizBySubcategory('${sub.id}')">${sub.name}（${subHeartQs.length}）${subProgress ? ' · 可續答' : ''}</button>`;
-    })).filter(Boolean).join('');
+    // ── 科目區塊 ──
+    const subjBlock = document.createElement('div');
+    subjBlock.className = 'heart-subject-block';
 
-    section.innerHTML = `<div class="heart-subject-title">
-      ${subj.name}（${subjHeartQs.length}題）
-      <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
-        <button class="heart-practice-cat-btn" onclick="startHeartQuizBySubject('${subj.id}')">${subjectProgress ? '續答此科目' : '練習此科目'}</button>
-      </div>
-    </div>
-    <div style="margin:0 0 10px 0;font-size:12px;color:var(--text-secondary)">
-      可直接依子分類重練：${subcatButtons || '此科目目前沒有可細分的愛心子分類'}
-    </div>`;
+    const subjHeader = document.createElement('div');
+    subjHeader.className = 'heart-subject-header';
+    subjHeader.innerHTML =
+      `<span class="heart-collapse-arrow">▼</span>` +
+      `<span class="heart-subject-name">${subj.name}（${subjHeartQs.length} 題）</span>` +
+      `<button class="heart-practice-cat-btn" onclick="event.stopPropagation();startHeartQuizBySubject('${subj.id}')">` +
+        (subjectProgress ? '續答此科目' : '練習此科目') +
+      `</button>`;
+    subjHeader.addEventListener('click', () => {
+      subjBlock.classList.toggle('collapsed');
+    });
+    subjBlock.appendChild(subjHeader);
 
-    subjHeartQs.forEach(q => {
-      const sessionLabel = q.session===1?'上':'下';
-      const item = document.createElement('div');
-      item.className = 'heart-item';
-      const subcatId = q.categories[0];
-      const found = getCategoryAndSubcategory(subcatId);
-      const subName = found.sub ? found.sub.name : '未分類';
-      item.innerHTML = `<span style="font-size:16px;flex-shrink:0">❤️</span>
-        <div class="heart-item-text">
-          ${q.text.length>55 ? q.text.slice(0,55)+'⋯⋯' : q.text}
-          <div class="heart-item-meta">${q.year}年${sessionLabel} 第${q.num}題 · ${subName}</div>
-        </div>
-        <button class="heart-item-remove" onclick="removeHeart('${q.id}',event)" title="移除">✕</button>`;
-      item.onclick = e => {
-        if (e.target.closest('.heart-item-remove')) return;
-        if (found.subj && found.cat && found.sub) {
-          currentSubjectId = found.subj.id;
-          currentCategoryId = found.cat.id;
-          currentSubcategoryId = found.sub.id;
-        }
-        quizState = buildQuizState([q], {currentIndex:0, sessionCorrect:0, isHeartMode:true, progressKey:null});
-        showScreen('quiz');
-        renderQuestion();
-      };
-      section.appendChild(item);
+    const subjBody = document.createElement('div');
+    subjBody.className = 'heart-subject-body';
+
+    // ── 類別層 ──
+    subj.categories.forEach(cat => {
+      const catHeartQs = subjHeartQs.filter(q => {
+        // 題目屬於此 cat（直接或透過 subcategory）
+        const allCatIds = [cat.id, ...(cat.subcategories||[]).map(s=>s.id)];
+        return q.categories.some(c => allCatIds.includes(c));
+      });
+      if (catHeartQs.length===0) return;
+
+      const catBlock = document.createElement('div');
+      catBlock.className = 'heart-cat-block';
+
+      // 子分類重練按鈕
+      const subcatBtns = (cat.subcategories||[]).map(sub => {
+        const subHeartQs = subjHeartQs.filter(q => q.categories.includes(sub.id));
+        if (subHeartQs.length===0) return '';
+        const subProgress = userData.progress?.[makeHeartProgressKey(null, sub.id)];
+        return `<button class="heart-practice-cat-btn" style="font-size:11px" onclick="event.stopPropagation();startHeartQuizBySubcategory('${sub.id}')">${sub.name}（${subHeartQs.length}）${subProgress?' · 可續答':''}</button>`;
+      }).filter(Boolean).join('');
+
+      const catHeader = document.createElement('div');
+      catHeader.className = 'heart-cat-header';
+      catHeader.innerHTML =
+        `<span class="heart-collapse-arrow">▼</span>` +
+        `<span class="heart-cat-name">${cat.name}（${catHeartQs.length} 題）</span>` +
+        (subcatBtns ? `<div class="heart-subcat-btns">${subcatBtns}</div>` : '');
+      catHeader.addEventListener('click', () => {
+        catBlock.classList.toggle('collapsed');
+      });
+      catBlock.appendChild(catHeader);
+
+      const catBody = document.createElement('div');
+      catBody.className = 'heart-cat-body';
+
+      catHeartQs.forEach(q => {
+        const sessionLabel = q.session===1?'上':'下';
+        const item = document.createElement('div');
+        item.className = 'heart-item';
+        const subcatId = q.categories[0];
+        const found = getCategoryAndSubcategory(subcatId);
+        const subName = found.sub ? found.sub.name : '未分類';
+        item.innerHTML = `<span style="font-size:16px;flex-shrink:0">❤️</span>
+          <div class="heart-item-text">
+            ${q.text.length>55 ? q.text.slice(0,55)+'⋯⋯' : q.text}
+            <div class="heart-item-meta">${q.year}年${sessionLabel} 第${q.num}題 · ${subName}</div>
+          </div>
+          <button class="heart-item-remove" onclick="removeHeart('${q.id}',event)" title="移除">✕</button>`;
+        item.onclick = e => {
+          if (e.target.closest('.heart-item-remove')) return;
+          if (found.subj && found.cat && found.sub) {
+            currentSubjectId = found.subj.id;
+            currentCategoryId = found.cat.id;
+            currentSubcategoryId = found.sub.id;
+          }
+          quizState = buildQuizState([q], {currentIndex:0, sessionCorrect:0, isHeartMode:true, progressKey:null});
+          showScreen('quiz');
+          renderQuestion();
+        };
+        catBody.appendChild(item);
+      });
+
+      catBlock.appendChild(catBody);
+      subjBody.appendChild(catBlock);
     });
 
-    list.appendChild(section);
+    subjBlock.appendChild(subjBody);
+    list.appendChild(subjBlock);
   });
-
-  const globalProgress = userData.progress?.[makeHeartProgressKey()];
-  if (globalProgress) {
-    const resumeBar = document.createElement('div');
-    resumeBar.style.marginBottom = '12px';
-    resumeBar.innerHTML = `<button class="btn-secondary" onclick="startHeartQuizAll()">續答愛心總複習</button>`;
-    list.prepend(resumeBar);
-  }
 }
-
 function removeHeart(qId, e) {
   e.stopPropagation();
   delete userData.hearts[qId];
@@ -3779,22 +3817,12 @@ function injectAnnotationUI(qId) {
   const container = document.getElementById('questionContainer');
   if (!container) return;
   // 重置手寫狀態
-  _draw.active = false; _draw.history = []; _draw.canvas = null; _draw.ctx = null; _draw.color = '#2d3436'; _draw.tool = 'pen';
+  _draw.active = false; _draw.history = []; _draw.canvas = null; _draw.ctx = null;
   _drawOverlayActive = false;
 
   const card = container.querySelector('.question-card');
   if (card) {
     card.style.position = 'relative';
-    // 浮動工具列（預設隱藏）
-    const toolbar = document.createElement('div');
-    toolbar.id = 'overlayToolbar';
-    toolbar.className = 'overlay-toolbar';
-    toolbar.style.display = 'none';
-    toolbar.innerHTML =
-      `<input class="draw-size-slider" type="range" min="1" max="12" value="${_draw.size}" oninput="setDrawSize(this.value)" title="筆粗細" style="width:60px">` +
-      '<button class="draw-tool-btn" onclick="undoDraw()" title="復原">↩ 復原</button>' +
-      '<button class="draw-tool-btn" onclick="clearDraw()" title="清除全部" style="color:#c0392b">🗑 清除</button>';
-    card.appendChild(toolbar);
 
     // 透明覆蓋 canvas
     const cv = document.createElement('canvas');
@@ -3812,6 +3840,11 @@ function injectAnnotationUI(qId) {
   wrap.innerHTML =
     '<div class="drawing-section">' +
       '<button class="drawing-toggle-btn" id="drawToggleBtn" onclick="toggleDrawOverlay()">✏️ 開啟手寫模式</button>' +
+      '<div id="overlayToolbar" class="inline-draw-toolbar" style="display:none">' +
+        `<input class="draw-size-slider" type="range" min="1" max="12" value="${_draw.size}" oninput="setDrawSize(this.value)" title="筆粗細" style="width:64px">` +
+        '<button class="draw-tool-btn" onclick="undoDraw()">↩ 復原</button>' +
+        '<button class="draw-tool-btn" onclick="clearDraw()" style="color:#c0392b">🗑 清除</button>' +
+      '</div>' +
     '</div>' +
     '<div class="typed-note-section">' +
       `<button class="typed-note-toggle-btn ${hasNote?'has-note':''}" id="tnBtn_${qId}" onclick="toggleTypedNotePanel('${qId}')">` +
