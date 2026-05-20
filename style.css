@@ -604,6 +604,48 @@ padding:5px 8px;
   border-radius: 20px;
 }
 
+/* ==================== 每題獨立手寫筆記區塊 ==================== */
+.qnote-draw-section { margin-top: 10px; }
+.qnote-draw-toggle-btn {
+  width: 100%; padding: 9px 14px; background: var(--surface2);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-family: var(--font-sans); font-size: 13px; color: var(--text-secondary);
+  cursor: pointer; text-align: left; display: flex; align-items: center; gap: 6px;
+  transition: all 0.15s;
+}
+.qnote-draw-toggle-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
+.qnote-draw-toggle-btn.open { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
+.qnote-draw-panel { display: none; margin-top: 8px; }
+.qnote-draw-panel.open { display: block; }
+.qnote-draw-toolbar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 7px 10px; background: var(--surface2);
+  border: 1px solid var(--border); border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  border-bottom: none;
+}
+.qnote-size-slider {
+  -webkit-appearance: none; height: 4px; border-radius: 2px;
+  background: var(--border); outline: none; cursor: pointer; width: 80px;
+}
+.qnote-size-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--accent); cursor: pointer;
+}
+.qnote-draw-tool-btn {
+  padding: 4px 10px; border-radius: var(--radius-sm); border: 1.5px solid var(--border);
+  background: var(--surface); color: var(--text-secondary); font-size: 12px;
+  cursor: pointer; font-family: var(--font-sans); transition: all 0.15s;
+}
+.qnote-draw-tool-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
+.qnote-canvas-wrap {
+  border: 1px solid var(--border); border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  overflow: hidden; background: #fff; touch-action: none; user-select: none;
+  position: relative;
+}
+.qnote-canvas {
+  display: block; width: 100%; height: 200px; cursor: crosshair;
+}
+
 /* ==================== 工具列移至 card 外（inline） ==================== */
 .inline-draw-toolbar {
   display: flex;

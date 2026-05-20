@@ -3819,6 +3819,8 @@ function injectAnnotationUI(qId) {
   // 重置手寫狀態
   _draw.active = false; _draw.history = []; _draw.canvas = null; _draw.ctx = null;
   _drawOverlayActive = false;
+  // 重置每題手寫筆記狀態
+  _qnote = { active: false, drawing: false, lastX: 0, lastY: 0, size: _qnote.size || 3, history: [], canvas: null, ctx: null };
 
   const card = container.querySelector('.question-card');
   if (card) {
@@ -3844,6 +3846,20 @@ function injectAnnotationUI(qId) {
         `<input class="draw-size-slider" type="range" min="1" max="12" value="${_draw.size}" oninput="setDrawSize(this.value)" title="筆粗細" style="width:64px">` +
         '<button class="draw-tool-btn" onclick="undoDraw()">↩ 復原</button>' +
         '<button class="draw-tool-btn" onclick="clearDraw()" style="color:#c0392b">🗑 清除</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="qnote-draw-section">' +
+      '<button class="qnote-draw-toggle-btn" id="qnoteDrawToggleBtn" onclick="toggleQnoteDraw()">🖊️ 開啟手寫筆記</button>' +
+      '<div class="qnote-draw-panel" id="qnoteDrawPanel">' +
+        '<div class="qnote-draw-toolbar">' +
+          '<span style="font-size:12px;color:var(--text-muted)">粗細</span>' +
+          '<input class="qnote-size-slider" id="qnoteSizeSlider" type="range" min="1" max="16" value="3" oninput="qnoteSetSize(this.value)">' +
+          '<button class="qnote-draw-tool-btn" onclick="qnoteUndo()">↩ 復原</button>' +
+          '<button class="qnote-draw-tool-btn" style="color:var(--danger)" onclick="qnoteClear()">🗑 清除</button>' +
+        '</div>' +
+        '<div class="qnote-canvas-wrap">' +
+          '<canvas class="qnote-canvas" id="qnoteCanvas"></canvas>' +
+        '</div>' +
       '</div>' +
     '</div>' +
     '<div class="typed-note-section">' +
@@ -3976,6 +3992,88 @@ function clearDraw() {
   if (!_draw.ctx || !_draw.canvas) return;
   _draw.ctx.clearRect(0, 0, _draw.canvas.width, _draw.canvas.height);
   _draw.history = [];
+}
+
+// ── 每題獨立手寫筆記 ──
+let _qnote = { active: false, drawing: false, lastX: 0, lastY: 0, size: 3, history: [], canvas: null, ctx: null };
+
+function toggleQnoteDraw() {
+  const panel = document.getElementById('qnoteDrawPanel');
+  const btn = document.getElementById('qnoteDrawToggleBtn');
+  if (!panel || !btn) return;
+  const isOpen = panel.classList.toggle('open');
+  btn.classList.toggle('open', isOpen);
+  btn.textContent = isOpen ? '🖊️ 收合手寫筆記' : '🖊️ 開啟手寫筆記';
+  if (isOpen && !_qnote.canvas) {
+    _qnoteInitCanvas();
+  }
+}
+
+function _qnoteInitCanvas() {
+  const cv = document.getElementById('qnoteCanvas');
+  if (!cv) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.parentElement.offsetWidth || 300;
+  const h = 200;
+  cv.width = w * dpr;
+  cv.height = h * dpr;
+  cv.style.width = w + 'px';
+  cv.style.height = h + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  _qnote.canvas = cv;
+  _qnote.ctx = ctx;
+  _qnote.history = [];
+  cv.addEventListener('pointerdown', _qnoteOnDown, {passive: false});
+  cv.addEventListener('pointermove', _qnoteOnMove, {passive: false});
+  cv.addEventListener('pointerup', _qnoteOnUp);
+  cv.addEventListener('pointercancel', _qnoteOnUp);
+}
+
+function _qnoteGetPos(e) {
+  const r = _qnote.canvas.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+function _qnoteOnDown(e) {
+  e.preventDefault();
+  _qnote.drawing = true;
+  const pos = _qnoteGetPos(e);
+  _qnote.lastX = pos.x; _qnote.lastY = pos.y;
+  const snap = _qnote.ctx.getImageData(0, 0, _qnote.canvas.width, _qnote.canvas.height);
+  _qnote.history.push(snap);
+  if (_qnote.history.length > 30) _qnote.history.shift();
+  const ctx = _qnote.ctx;
+  ctx.beginPath();
+  ctx.fillStyle = '#000000';
+  ctx.arc(pos.x, pos.y, _qnote.size / 2, 0, Math.PI * 2);
+  ctx.fill();
+}
+function _qnoteOnMove(e) {
+  if (!_qnote.drawing) return;
+  e.preventDefault();
+  const pos = _qnoteGetPos(e);
+  const ctx = _qnote.ctx;
+  ctx.beginPath();
+  ctx.moveTo(_qnote.lastX, _qnote.lastY);
+  ctx.lineTo(pos.x, pos.y);
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = _qnote.size;
+  ctx.stroke();
+  _qnote.lastX = pos.x; _qnote.lastY = pos.y;
+}
+function _qnoteOnUp() { _qnote.drawing = false; }
+
+function qnoteSetSize(v) { _qnote.size = Number(v); }
+function qnoteUndo() {
+  if (!_qnote.history.length || !_qnote.ctx) return;
+  _qnote.ctx.putImageData(_qnote.history.pop(), 0, 0);
+}
+function qnoteClear() {
+  if (!_qnote.ctx || !_qnote.canvas) return;
+  _qnote.ctx.clearRect(0, 0, _qnote.canvas.width, _qnote.canvas.height);
+  _qnote.history = [];
 }
 
 // ── 打字筆記 UI ──
