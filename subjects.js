@@ -92,7 +92,7 @@ const SUBJECTS = [
           {id:'sp_policy_org',      name:'福利組織與資源', desc:'公私部門、NPO、新管理主義、契約外包'},
         ]
       },
-      { id:'sp_main6', name:'主要六個立法', desc:'六大社福核心法規',
+      { id:'sp_main6', name:'主要六個立法', desc:'六大社福核心法規', isLawCategory:true,
         subcategories:[
           {id:'sp_law_elderly',    name:'老人福利法', desc:'老人定義、機構類型、家庭照顧者支持'},
           {id:'sp_law_children',   name:'兒童及少年福利與權益保障法', desc:'收出養、托育、安置'},
@@ -102,7 +102,7 @@ const SUBJECTS = [
           {id:'sp_law_sw',         name:'社會工作師法', desc:'執照、事務所、執業規範'},
         ]
       },
-      { id:'sp_other', name:'其餘各法', desc:'長照、國民年金、志願服務等各法',
+      { id:'sp_other', name:'其餘各法', desc:'長照、國民年金、志願服務等各法', isLawCategory:true,
         subcategories:[
           {id:'sp_law_ltc',        name:'長期照顧服務法', desc:'長照財源、服務類型、機構規範'},
           {id:'sp_law_pension',    name:'國民年金法', desc:'投保對象、給付項目、費率調整'},

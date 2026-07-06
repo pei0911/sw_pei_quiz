@@ -8,6 +8,7 @@ let currentSubcategoryId = null;
 let currentExamSubjectId = null;
 let currentExamYear = null;
 let currentExamSession = null;
+let lawSortMode = 'count';
 const USER_ID = 'default_user';
 
 // ==================== Firebase ====================
@@ -99,6 +100,21 @@ function getSessionLabel(session) {
 function getSubjectName(subjectId) {
   return SUBJECTS.find(s => s.id === subjectId)?.name || subjectId;
 }
+// ==================== 正確率／分數計算工具 ====================
+const EXAM_POINTS_PER_QUESTION = 1.5;
+const EXAM_FULL_SCORE = 60;
+function calcAccuracy(correct, total) {
+  return total > 0 ? (correct / total * 100) : 0;
+}
+function fmtAccuracy(correct, total) {
+  return calcAccuracy(correct, total).toFixed(2);
+}
+function calcExamScore(correct) {
+  return correct * EXAM_POINTS_PER_QUESTION;
+}
+function fmtExamScore(correct) {
+  return calcExamScore(correct).toFixed(2);
+}
 function buildQuizState(questions, opts={}) {
   return {
     questions,
@@ -158,7 +174,7 @@ function recordCompletedSubcategoryRun() {
   const total = quizState.questions?.length || 0;
   if (total===0) return;
   const correct = quizState.sessionCorrect || 0;
-  const accuracy = Math.round(correct / total * 100);
+  const accuracy = calcAccuracy(correct, total);
   userData.subcategoryRuns = userData.subcategoryRuns || {};
   userData.subcategoryRuns[currentSubcategoryId] = userData.subcategoryRuns[currentSubcategoryId] || [];
   userData.subcategoryRuns[currentSubcategoryId].push({
@@ -175,7 +191,7 @@ function getSubcategoryRunSummary(subcategoryId) {
   if (!runs.length) return null;
   const last = runs[runs.length - 1];
   const best = Math.max(...runs.map(r => Number(r.accuracy) || 0));
-  const avg = Math.round(runs.reduce((sum, r) => sum + (Number(r.accuracy) || 0), 0) / runs.length);
+  const avg = runs.reduce((sum, r) => sum + (Number(r.accuracy) || 0), 0) / runs.length;
   return { count: runs.length, last, best, avg };
 }
 function clearQuizProgress(progressKey) {
@@ -250,6 +266,7 @@ function showScreen(id) {
   if (id==='heart') renderHeartScreen();
   if (id==='stats') renderStats();
   if (id==='typenotes') renderTypedNotesScreen();
+  if (id==='lawindex') renderLawIndex();
 }
 function showToast(msg) {
   const t = document.getElementById('toast');
@@ -295,7 +312,7 @@ function renderHome() {
     const answered = subjQs.filter(q => userData.answers[q.id]).length;
     const correct = subjQs.filter(q => userData.answers[q.id]?.correct).length;
     const pct = subjQs.length>0 ? Math.round(answered/subjQs.length*100) : 0;
-    const acc = answered>0 ? Math.round(correct/answered*100) : 0;
+    const acc = fmtAccuracy(correct, answered);
     const card = document.createElement('div');
     card.className = 'subject-card';
     card.innerHTML = `<h3>${subj.name}</h3><p>${subj.desc}</p>
@@ -328,7 +345,7 @@ function showSubject(subjectId) {
     const catQs = QUESTIONS.filter(q => q.categories.some(id => subIds.includes(id)));
     const answered = catQs.filter(q => userData.answers[q.id]).length;
     const correct = catQs.filter(q => userData.answers[q.id]?.correct).length;
-    const acc = answered>0 ? Math.round(correct/answered*100) : 0;
+    const acc = fmtAccuracy(correct, answered);
     const resume = userData.progress?.[cat.id];
     const card = document.createElement('div');
     card.className = 'category-card';
@@ -356,12 +373,13 @@ function renderExamPracticeSection(subj, list) {
     const examQs = QUESTIONS.filter(q => q.subject === subj.id && q.year === exam.year && q.session === exam.session);
     const answered = examQs.filter(q => userData.answers[q.id]).length;
     const correct = examQs.filter(q => userData.answers[q.id]?.correct).length;
-    const acc = answered>0 ? Math.round(correct/answered*100) : 0;
+    const acc = fmtAccuracy(correct, answered);
+    const score = fmtExamScore(correct);
     const progressKey = makeExamProgressKey(subj.id, exam.year, exam.session);
     const resume = userData.progress?.[progressKey];
     const card = document.createElement('div');
     card.className = 'category-card';
-    card.innerHTML = `<div><h4>${exam.year}年${getSessionLabel(exam.session)} ${subj.name}${resume ? ' <span style="font-size:11px;color:var(--accent)">（可續答）</span>' : ''}</h4><p>${examQs.length}題 · 已答${answered}題 · 正確率${acc}%</p></div><span class="cat-arrow">›</span>`;
+    card.innerHTML = `<div><h4>${exam.year}年${getSessionLabel(exam.session)} ${subj.name}${resume ? ' <span style="font-size:11px;color:var(--accent)">（可續答）</span>' : ''}</h4><p>${examQs.length}題 · 已答${answered}題 · 正確率${acc}% · 得分 ${score}／${EXAM_FULL_SCORE}分</p></div><span class="cat-arrow">›</span>`;
     card.onclick = () => startExamQuiz(subj.id, exam.year, exam.session);
     list.appendChild(card);
   });
@@ -395,7 +413,7 @@ function showCategory(categoryId) {
   const totalQs = QUESTIONS.filter(q => q.categories.some(id => subcats.some(sc => sc.id===id)));
   const answered = totalQs.filter(q => userData.answers[q.id]).length;
   const correct = totalQs.filter(q => userData.answers[q.id]?.correct).length;
-  const acc = answered>0 ? Math.round(correct/answered*100) : 0;
+  const acc = fmtAccuracy(correct, answered);
 
   if (categoryStartBtn) categoryStartBtn.style.display = 'none';
   document.getElementById('catStatsRow').innerHTML = `
@@ -406,7 +424,7 @@ function showCategory(categoryId) {
     const subQs = QUESTIONS.filter(q => q.categories.includes(sub.id));
     const subAnswered = subQs.filter(q => userData.answers[q.id]).length;
     const subCorrect = subQs.filter(q => userData.answers[q.id]?.correct).length;
-    const subAcc = subAnswered>0 ? Math.round(subCorrect/subAnswered*100) : 0;
+    const subAcc = fmtAccuracy(subCorrect, subAnswered);
     const resume = userData.progress?.[sub.id];
     const card = document.createElement('div');
     card.className = 'category-card';
@@ -441,10 +459,10 @@ function showSubcategory(subcategoryId) {
   const subQs = QUESTIONS.filter(q => q.categories.includes(subcategoryId));
   const answered = subQs.filter(q => userData.answers[q.id]).length;
   const correct = subQs.filter(q => userData.answers[q.id]?.correct).length;
-  const acc = answered>0 ? Math.round(correct/answered*100) : 0;
+  const acc = fmtAccuracy(correct, answered);
   const resume = userData.progress?.[subcategoryId];
   const runSummary = getSubcategoryRunSummary(subcategoryId);
-  document.getElementById('catStatsRow').innerHTML = `已答 <strong>${answered}/${subQs.length}</strong> 題 &nbsp;·&nbsp; 正確率 <strong>${acc}%</strong>${resume ? ' &nbsp;·&nbsp; <span style="color:var(--accent)">可續答</span>' : ''}${runSummary ? ` &nbsp;·&nbsp; 已完整練習 <strong>${runSummary.count}</strong> 次 &nbsp;·&nbsp; 最近一次 <strong>${runSummary.last.accuracy}%</strong>` : ''}`;
+  document.getElementById('catStatsRow').innerHTML = `已答 <strong>${answered}/${subQs.length}</strong> 題 &nbsp;·&nbsp; 正確率 <strong>${acc}%</strong>${resume ? ' &nbsp;·&nbsp; <span style="color:var(--accent)">可續答</span>' : ''}${runSummary ? ` &nbsp;·&nbsp; 已完整練習 <strong>${runSummary.count}</strong> 次 &nbsp;·&nbsp; 最近一次 <strong>${Number(runSummary.last.accuracy).toFixed(2)}%</strong>` : ''}`;
 
   if (categoryStartBtn) categoryStartBtn.style.display = 'inline-flex';
   document.getElementById('categoryNotesBtn').textContent = '📖 查看本子分類重點筆記';
@@ -859,6 +877,122 @@ function removeHeart(qId, e) {
   showToast('已移除');
 }
 
+// ==================== 法規速查 ====================
+function getLawGroups() {
+  const groups = [];
+  SUBJECTS.forEach(subj => {
+    subj.categories.forEach(cat => {
+      if (!cat.isLawCategory) return;
+      const laws = (cat.subcategories || []).map(sub => {
+        const qs = QUESTIONS.filter(q => q.categories.includes(sub.id));
+        return {
+          id: sub.id,
+          name: sub.name,
+          desc: sub.desc,
+          catId: cat.id,
+          catName: cat.name,
+          subjId: subj.id,
+          subjName: subj.name,
+          count: qs.length
+        };
+      });
+      groups.push({ catId: cat.id, catName: cat.name, laws });
+    });
+  });
+  return groups;
+}
+function setLawSort(mode) {
+  lawSortMode = mode;
+  renderLawIndex();
+}
+function renderLawIndex() {
+  const listEl = document.getElementById('lawIndexList');
+  if (!listEl) return;
+  const countBtn = document.getElementById('lawSortCount');
+  const nameBtn = document.getElementById('lawSortName');
+  if (countBtn) countBtn.classList.toggle('active', lawSortMode==='count');
+  if (nameBtn) nameBtn.classList.toggle('active', lawSortMode==='name');
+
+  const keyword = (document.getElementById('lawSearchInput')?.value || '').trim();
+  const groups = getLawGroups();
+  let html = '';
+  let totalShown = 0;
+
+  groups.forEach(group => {
+    let laws = group.laws;
+    if (keyword) laws = laws.filter(l => l.name.includes(keyword) || (l.desc||'').includes(keyword));
+    if (!laws.length) return;
+    laws = [...laws].sort((a,b) => {
+      if (lawSortMode === 'name') return a.name.localeCompare(b.name, 'zh-Hant');
+      return b.count - a.count || a.name.localeCompare(b.name, 'zh-Hant');
+    });
+    totalShown += laws.length;
+    html += `<div class="law-group-title">${group.catName}</div>`;
+    laws.forEach(l => {
+      html += `<div class="law-card" onclick="openLawDetail('${l.id}')">
+        <div class="law-card-main">
+          <div class="law-card-name">${l.name}</div>
+          <div class="law-card-desc">${l.desc||''}</div>
+        </div>
+        <div class="law-card-right">
+          <span class="law-count-badge${l.count===0?' zero':''}">出題 ${l.count} 次</span>
+          <span class="cat-arrow">›</span>
+        </div>
+      </div>`;
+    });
+  });
+
+  if (!totalShown) {
+    html = `<div class="law-empty">找不到符合「${keyword}」的法規</div>`;
+  }
+  listEl.innerHTML = html;
+}
+function openLawDetail(subcategoryId) {
+  const found = getCategoryAndSubcategory(subcategoryId);
+  const sub = found.sub;
+  if (!sub) { showToast('找不到此法規'); return; }
+  const cat = found.cat, subj = found.subj;
+  const qs = QUESTIONS.filter(q => q.categories.includes(subcategoryId))
+    .sort((a,b) => a.year===b.year ? (a.session===b.session ? a.num-b.num : a.session-b.session) : a.year-b.year);
+
+  const note = NOTES[subcategoryId];
+  let html = `<div class="law-detail-meta"><span class="law-count-badge">出題 ${qs.length} 次</span><span class="law-detail-cat">${subj?.name||''} · ${cat?.name||''}</span></div>`;
+
+  html += `<div class="law-detail-actions"><button class="btn-primary" onclick="closeModal();showSubcategory('${subcategoryId}')">📖 前往練習本法規題目</button></div>`;
+
+  if (note) {
+    html += note.content;
+  } else {
+    html += `<p style="color:var(--text-secondary);font-size:13px;margin-top:10px">此法規尚無重點筆記。</p>`;
+  }
+
+  if (qs.length) {
+    html += `<h4>歷屆相關考題（共 ${qs.length} 題）</h4><div class="law-qa-list">`;
+    qs.forEach(q => {
+      html += `<div class="law-qa-item">
+        <div class="law-qa-head">
+          <div class="law-qa-badge">${q.year}年${getSessionLabel(q.session)} 第${q.num}題</div>
+          <div class="law-qa-text">${q.text}</div>
+        </div>
+        <div class="explanation-box">
+          <button class="explanation-toggle" onclick="toggleLawQA(this)">📝 查看答案與解析 <span>▼</span></button>
+          <div class="explanation-content"><strong>正解：${q.answer}</strong><br><br>${q.explanation||''}</div>
+        </div>
+      </div>`;
+    });
+    html += `</div>`;
+  } else {
+    html += `<p style="color:var(--text-secondary);font-size:13px;margin-top:10px">目前尚無這個法規的歷屆考題資料。</p>`;
+  }
+
+  openModal(sub.name, html);
+}
+function toggleLawQA(btn) {
+  const content = btn.nextElementSibling;
+  const isOpen = content.classList.toggle('open');
+  btn.innerHTML = isOpen ? '📝 收起答案與解析 <span>▲</span>' : '📝 查看答案與解析 <span>▼</span>';
+}
+
 // ==================== 統計 ====================
 function renderStats() {
   let html = `
@@ -870,7 +1004,7 @@ function renderStats() {
     const qs = QUESTIONS.filter(q=>q.subject===subj.id);
     const ans = qs.filter(q=>userData.answers[q.id]).length;
     const cor = qs.filter(q=>userData.answers[q.id]?.correct).length;
-    const a = ans>0 ? Math.round(cor/ans*100) : 0;
+    const a = fmtAccuracy(cor, ans);
     html += `<tr><td>${subj.name}</td><td>${ans}/${qs.length}</td><td><div class="acc-bar-wrap"><div class="acc-bar"><div class="acc-fill" style="width:${a}%"></div></div><span class="acc-label">${a}%</span></div></td></tr>`;
   });
   html += `</tbody></table></div>
@@ -884,7 +1018,7 @@ function renderStats() {
       const qs = QUESTIONS.filter(q=>q.categories.some(id => subIds.includes(id)));
       const ans = qs.filter(q=>userData.answers[q.id]).length;
       const cor = qs.filter(q=>userData.answers[q.id]?.correct).length;
-      const a = ans>0 ? Math.round(cor/ans*100) : 0;
+      const a = fmtAccuracy(cor, ans);
       html += `<tr><td style="font-size:11px;color:var(--text-muted)">${subj.name}</td><td>${cat.name}</td><td>${ans}/${qs.length}</td><td><div class="acc-bar-wrap"><div class="acc-bar"><div class="acc-fill" style="width:${a}%"></div></div><span class="acc-label">${a}%</span></div></td></tr>`;
     });
   });
@@ -894,7 +1028,7 @@ function renderStats() {
     <div class="stats-section">
       <h3>年度場次正確率</h3>
       <table class="stats-table">
-        <thead><tr><th>科目</th><th>年度場次</th><th>已答</th><th>正確率</th></tr></thead><tbody>`;
+        <thead><tr><th>科目</th><th>年度場次</th><th>已答</th><th>正確率</th><th>得分</th></tr></thead><tbody>`;
   SUBJECTS.forEach(subj => {
     const exams = [...new Map(
       QUESTIONS
@@ -905,8 +1039,9 @@ function renderStats() {
       const qs = QUESTIONS.filter(q => q.subject===subj.id && q.year===exam.year && q.session===exam.session);
       const ans = qs.filter(q=>userData.answers[q.id]).length;
       const cor = qs.filter(q=>userData.answers[q.id]?.correct).length;
-      const a = ans>0 ? Math.round(cor/ans*100) : 0;
-      html += `<tr><td style="font-size:11px;color:var(--text-muted)">${subj.name}</td><td>${exam.year}年${getSessionLabel(exam.session)}</td><td>${ans}/${qs.length}</td><td><div class="acc-bar-wrap"><div class="acc-bar"><div class="acc-fill" style="width:${a}%"></div></div><span class="acc-label">${a}%</span></div></td></tr>`;
+      const a = fmtAccuracy(cor, ans);
+      const score = fmtExamScore(cor);
+      html += `<tr><td style="font-size:11px;color:var(--text-muted)">${subj.name}</td><td>${exam.year}年${getSessionLabel(exam.session)}</td><td>${ans}/${qs.length}</td><td><div class="acc-bar-wrap"><div class="acc-bar"><div class="acc-fill" style="width:${a}%"></div></div><span class="acc-label">${a}%</span></div></td><td>${score}／${EXAM_FULL_SCORE}分</td></tr>`;
     });
   });
   html += `</tbody></table></div>`;
@@ -921,7 +1056,7 @@ function renderStats() {
       (cat.subcategories || []).forEach(sub => {
         const summary = getSubcategoryRunSummary(sub.id);
         if (!summary) return;
-        html += `<tr><td style="font-size:11px;color:var(--text-muted)">${subj.name}</td><td>${sub.name}</td><td>${summary.count}</td><td>${summary.last.correct}/${summary.last.total}（${summary.last.accuracy}%）</td><td>${summary.best}%</td><td>${summary.avg}%</td></tr>`;
+        html += `<tr><td style="font-size:11px;color:var(--text-muted)">${subj.name}</td><td>${sub.name}</td><td>${summary.count}</td><td>${summary.last.correct}/${summary.last.total}（${Number(summary.last.accuracy).toFixed(2)}%）</td><td>${Number(summary.best).toFixed(2)}%</td><td>${Number(summary.avg).toFixed(2)}%</td></tr>`;
       });
     });
   });

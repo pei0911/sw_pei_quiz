@@ -22,6 +22,7 @@
     <div class="header-logo" onclick="showScreen('home')">📚 社工師練題系統</div>
     <nav class="header-nav">
       <button class="nav-btn" onclick="showScreen('heart')">❤️ 愛心題目</button>
+      <button class="nav-btn" onclick="showScreen('lawindex')">⚖️ 法規速查</button>
       <button class="nav-btn" onclick="showTypedNotesScreen()">📝 我的筆記</button>
       <button class="nav-btn" onclick="showScreen('stats')">📊 統計</button>
     </nav>
@@ -89,6 +90,22 @@
         <button class="btn-primary" onclick="startHeartQuizAll()" style="font-size:13px;padding:8px 14px">全部複習</button>
       </div>
       <div id="heartList"></div>
+    </div>
+
+    <!-- 法規速查 -->
+    <div id="screen-lawindex" class="screen">
+      <div class="heart-header">
+        <h2>⚖️ 法規速查</h2>
+      </div>
+      <p class="law-intro">收錄社工師考試歷屆考過的法規，並統計各法規出題次數，方便掌握考試重點。點選法規可查看重點筆記與歷屆相關考題。</p>
+      <div class="law-toolbar">
+        <input type="text" id="lawSearchInput" class="law-search-input" placeholder="🔍 搜尋法規名稱…" oninput="renderLawIndex()">
+        <div class="law-sort-group">
+          <button class="law-sort-btn" id="lawSortCount" onclick="setLawSort('count')">依出題次數</button>
+          <button class="law-sort-btn" id="lawSortName" onclick="setLawSort('name')">依名稱</button>
+        </div>
+      </div>
+      <div id="lawIndexList"></div>
     </div>
 
     <!-- 統計 -->
