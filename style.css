@@ -753,11 +753,25 @@ padding:5px 8px;
 .law-sort-btn:hover { border-color: var(--accent); color: var(--accent); }
 .law-sort-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
 
-.law-group-title {
-  font-family: var(--font-serif); font-size: 15px; font-weight: 700; color: var(--accent);
-  margin: 22px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--accent-light);
+.law-group-header {
+  display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none;
+  padding: 12px 4px; margin-top: 8px; border-bottom: 1.5px solid var(--border); transition: border-color 0.15s;
 }
-.law-group-title:first-of-type { margin-top: 0; }
+.law-group-header:first-child { margin-top: 0; }
+.law-group-header:hover { border-color: var(--accent); }
+.law-group-arrow {
+  display: inline-block; font-size: 11px; color: var(--accent); transition: transform 0.2s;
+  flex-shrink: 0;
+}
+.law-group-header.expanded .law-group-arrow { transform: rotate(90deg); }
+.law-group-title-text {
+  font-family: var(--font-serif); font-size: 15.5px; font-weight: 700; color: var(--text-primary); flex: 1;
+}
+.law-group-count {
+  font-size: 12px; color: var(--text-muted); background: var(--surface2);
+  padding: 3px 10px; border-radius: 12px; white-space: nowrap;
+}
+.law-group-body { padding-top: 10px; }
 
 .law-card {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
@@ -792,3 +806,21 @@ padding:5px 8px;
   padding: 2px 8px; border-radius: 10px; margin-bottom: 6px; font-weight: 600;
 }
 .law-qa-text { font-size: 13.5px; line-height: 1.7; color: var(--text-primary); }
+
+.law-card-right { flex-wrap: wrap; justify-content: flex-end; row-gap: 6px; }
+.law-count-badge.ref { background: #eef4ff; color: #3159c4; }
+
+a.law-card-name.law-ext-link {
+  font-size: 14.5px; font-weight: 600; margin-bottom: 3px; color: var(--accent);
+  text-decoration: none; display: inline-block;
+}
+a.law-card-name.law-ext-link:hover { text-decoration: underline; }
+
+.law-card-ref { cursor: default; }
+.law-card-ref:hover { border-color: var(--border); background: var(--surface); }
+.law-card-ref.clickable { cursor: pointer; }
+.law-card-ref.clickable:hover { border-color: var(--accent); background: var(--accent-light); }
+.law-card-ref .law-card-main a.law-ext-link:hover { text-decoration: underline; }
+
+.law-ext-link { color: var(--accent); font-size: 13px; text-decoration: none; font-weight: 600; }
+.law-ext-link:hover { text-decoration: underline; }

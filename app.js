@@ -9,6 +9,12 @@ let currentExamSubjectId = null;
 let currentExamYear = null;
 let currentExamSession = null;
 let lawSortMode = 'count';
+let lawExpandedGroups = new Set(['own_sp_main6', 'own_sp_other']);
+function toggleLawGroup(key) {
+  if (lawExpandedGroups.has(key)) lawExpandedGroups.delete(key);
+  else lawExpandedGroups.add(key);
+  renderLawIndex();
+}
 const USER_ID = 'default_user';
 
 // ==================== Firebase ====================
@@ -737,6 +743,7 @@ function nextQuestion() {
 function exitQuiz() {
   if (quizState.isHeartMode) showScreen('heart');
   else if (quizState.practiceMode === 'exam' && (currentExamSubjectId || currentSubjectId)) showSubject(currentExamSubjectId || currentSubjectId);
+  else if (quizState.practiceMode === 'lawtag') showScreen('lawindex');
   else if (currentSubcategoryId) showSubcategory(currentSubcategoryId);
   else if (currentCategoryId) showCategory(currentCategoryId);
   else showScreen('home');
@@ -877,6 +884,25 @@ function removeHeart(qId, e) {
   showToast('已移除');
 }
 
+function getQuestionsByLawName(lawName) {
+  return QUESTIONS.filter(q => Array.isArray(q.laws) && q.laws.includes(lawName));
+}
+function makeLawTagProgressKey(lawName) {
+  return `lawtag_${lawName}`;
+}
+function startLawTagQuiz(lawName) {
+  const qs = getQuestionsByLawName(lawName);
+  if (qs.length===0) { showToast('此法規目前尚無題目'); return; }
+  currentCategoryId = null;
+  currentSubcategoryId = null;
+  startSavedOrFreshQuiz({
+    progressKey: makeLawTagProgressKey(lawName),
+    questions: qs,
+    isHeartMode: false,
+    practiceMode: 'lawtag',
+    label: `${lawName}．法規練習`
+  });
+}
 // ==================== 法規速查 ====================
 function getLawGroups() {
   const groups = [];
@@ -893,7 +919,8 @@ function getLawGroups() {
           catName: cat.name,
           subjId: subj.id,
           subjName: subj.name,
-          count: qs.length
+          count: qs.length,
+          ref: (typeof findLawReference === 'function') ? findLawReference(sub.name) : null
         };
       });
       groups.push({ catId: cat.id, catName: cat.name, laws });
@@ -905,6 +932,14 @@ function setLawSort(mode) {
   lawSortMode = mode;
   renderLawIndex();
 }
+function renderLawGroupHeader(key, title, count, matchCount, forceExpanded) {
+  const expanded = forceExpanded || lawExpandedGroups.has(key);
+  return `<div class="law-group-header${expanded ? ' expanded' : ''}" onclick="toggleLawGroup('${key}')">
+    <span class="law-group-arrow">▶</span>
+    <span class="law-group-title-text">${title}</span>
+    <span class="law-group-count">${matchCount}${matchCount!==count ? ` / ${count}` : ''} 部</span>
+  </div>`;
+}
 function renderLawIndex() {
   const listEl = document.getElementById('lawIndexList');
   if (!listEl) return;
@@ -914,10 +949,13 @@ function renderLawIndex() {
   if (nameBtn) nameBtn.classList.toggle('active', lawSortMode==='name');
 
   const keyword = (document.getElementById('lawSearchInput')?.value || '').trim();
+  const forceExpand = keyword.length > 0;
   const groups = getLawGroups();
+  const ownLawNames = groups.flatMap(g => g.laws.map(l => l.name));
   let html = '';
   let totalShown = 0;
 
+  // ---- 第一區：本系統練習分類（自有題庫統計，可直接練習） ----
   groups.forEach(group => {
     let laws = group.laws;
     if (keyword) laws = laws.filter(l => l.name.includes(keyword) || (l.desc||'').includes(keyword));
@@ -927,20 +965,70 @@ function renderLawIndex() {
       return b.count - a.count || a.name.localeCompare(b.name, 'zh-Hant');
     });
     totalShown += laws.length;
-    html += `<div class="law-group-title">${group.catName}</div>`;
+    const key = 'own_' + group.catId;
+    const expanded = forceExpand || lawExpandedGroups.has(key);
+    html += renderLawGroupHeader(key, `🗂️ ${group.catName}`, group.laws.length, laws.length, forceExpand);
+    html += `<div class="law-group-body" style="display:${expanded ? 'block' : 'none'}">`;
     laws.forEach(l => {
+      const refBadges = l.ref
+        ? `<span class="law-count-badge ref">官方近5年 ${l.ref.recent5y} 題</span><span class="law-count-badge ref">官方歷屆 ${l.ref.alltime} 題</span>`
+        : '';
+      const linkIcon = l.ref ? (l.ref.urlIsFallback ? '🔍' : '🔗') : '';
+      const nameHtml = l.ref
+        ? `<a href="${l.ref.url}" target="_blank" rel="noopener" class="law-card-name law-ext-link" onclick="event.stopPropagation()" title="${l.ref.urlIsFallback ? '暫以搜尋引擎連結查找（尚無正式全文連結）' : '開啟全國法規資料庫全文'}">${l.name} ${linkIcon}</a>`
+        : `<div class="law-card-name">${l.name}</div>`;
       html += `<div class="law-card" onclick="openLawDetail('${l.id}')">
         <div class="law-card-main">
-          <div class="law-card-name">${l.name}</div>
+          ${nameHtml}
           <div class="law-card-desc">${l.desc||''}</div>
         </div>
         <div class="law-card-right">
-          <span class="law-count-badge${l.count===0?' zero':''}">出題 ${l.count} 次</span>
+          <span class="law-count-badge${l.count===0?' zero':''}">本站題庫 ${l.count} 題</span>
+          ${refBadges}
           <span class="cat-arrow">›</span>
         </div>
       </div>`;
     });
+    html += `</div>`;
   });
+
+  // ---- 第二區：官方法規參考（依官網原分類：法律／命令／憲法） ----
+  if (typeof LAW_REFERENCE !== 'undefined') {
+    const catOrder = ['法律', '命令', '憲法'];
+    catOrder.forEach(sourceCat => {
+      let refLaws = LAW_REFERENCE.filter(r => r.sourceCategory === sourceCat && !ownLawNames.includes(r.name));
+      const totalInCat = refLaws.length;
+      if (keyword) refLaws = refLaws.filter(r => r.name.includes(keyword));
+      if (!refLaws.length) return;
+      refLaws = [...refLaws].sort((a,b) => {
+        if (lawSortMode === 'name') return a.name.localeCompare(b.name, 'zh-Hant');
+        return b.alltime - a.alltime || a.name.localeCompare(b.name, 'zh-Hant');
+      });
+      totalShown += refLaws.length;
+      const key = 'ref_' + sourceCat;
+      const expanded = forceExpand || lawExpandedGroups.has(key);
+      html += renderLawGroupHeader(key, `📋 官方法規參考：${sourceCat}類`, totalInCat, refLaws.length, forceExpand);
+      html += `<div class="law-group-body" style="display:${expanded ? 'block' : 'none'}">`;
+      refLaws.forEach(r => {
+        const ownQs = getQuestionsByLawName(r.name);
+        const clickable = ownQs.length > 0;
+        const linkIcon = r.urlIsFallback ? '🔍' : '🔗';
+        html += `<div class="law-card law-card-ref${clickable ? ' clickable' : ''}"${clickable ? ` onclick="startLawTagQuiz('${r.name}')"` : ''}>
+          <div class="law-card-main">
+            <a href="${r.url}" target="_blank" rel="noopener" class="law-card-name law-ext-link" onclick="event.stopPropagation()" title="${r.urlIsFallback ? '暫以搜尋引擎連結查找（尚無正式全文連結）' : '開啟全國法規資料庫全文'}">${r.name} ${linkIcon}</a>
+            <div class="law-card-desc">出現年度 ${r.yearsAppeared} · 最新修正 ${r.lastAmended}</div>
+          </div>
+          <div class="law-card-right">
+            <span class="law-count-badge${clickable ? '' : ' zero'}">本站題庫 ${ownQs.length} 題</span>
+            <span class="law-count-badge ref">近5年 ${r.recent5y} 題</span>
+            <span class="law-count-badge ref">歷屆 ${r.alltime} 題</span>
+            ${clickable ? '<span class="cat-arrow">›</span>' : ''}
+          </div>
+        </div>`;
+      });
+      html += `</div>`;
+    });
+  }
 
   if (!totalShown) {
     html = `<div class="law-empty">找不到符合「${keyword}」的法規</div>`;
@@ -956,7 +1044,16 @@ function openLawDetail(subcategoryId) {
     .sort((a,b) => a.year===b.year ? (a.session===b.session ? a.num-b.num : a.session-b.session) : a.year-b.year);
 
   const note = NOTES[subcategoryId];
-  let html = `<div class="law-detail-meta"><span class="law-count-badge">出題 ${qs.length} 次</span><span class="law-detail-cat">${subj?.name||''} · ${cat?.name||''}</span></div>`;
+  const ref = (typeof findLawReference === 'function') ? findLawReference(sub.name) : null;
+  let html = `<div class="law-detail-meta"><span class="law-count-badge">本站題庫 ${qs.length} 題</span><span class="law-detail-cat">${subj?.name||''} · ${cat?.name||''}</span></div>`;
+  if (ref) {
+    html += `<div class="law-detail-meta">
+      <span class="law-count-badge ref">官方近5年 ${ref.recent5y} 題</span>
+      <span class="law-count-badge ref">官方歷屆 ${ref.alltime} 題</span>
+      <a href="${ref.url}" target="_blank" rel="noopener" class="law-ext-link">開啟全國法規資料庫 🔗</a>
+    </div>
+    <div class="law-detail-cat" style="margin-bottom:8px">出現年度 ${ref.yearsAppeared} · 最新修正 ${ref.lastAmended}</div>`;
+  }
 
   html += `<div class="law-detail-actions"><button class="btn-primary" onclick="closeModal();showSubcategory('${subcategoryId}')">📖 前往練習本法規題目</button></div>`;
 
