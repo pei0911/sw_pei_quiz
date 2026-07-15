@@ -1013,7 +1013,7 @@ function renderLawIndex() {
         const ownQs = getQuestionsByLawName(r.name);
         const clickable = ownQs.length > 0;
         const linkIcon = r.urlIsFallback ? '🔍' : '🔗';
-        html += `<div class="law-card law-card-ref${clickable ? ' clickable' : ''}"${clickable ? ` onclick="startLawTagQuiz('${r.name}')"` : ''}>
+        html += `<div class="law-card law-card-ref${clickable ? ' clickable' : ''}"${clickable ? ` onclick="openLawRefDetail('${r.name}')"` : ''}>
           <div class="law-card-main">
             <a href="${r.url}" target="_blank" rel="noopener" class="law-card-name law-ext-link" onclick="event.stopPropagation()" title="${r.urlIsFallback ? '暫以搜尋引擎連結查找（尚無正式全文連結）' : '開啟全國法規資料庫全文'}">${r.name} ${linkIcon}</a>
             <div class="law-card-desc">出現年度 ${r.yearsAppeared} · 最新修正 ${r.lastAmended}</div>
@@ -1034,6 +1034,48 @@ function renderLawIndex() {
     html = `<div class="law-empty">找不到符合「${keyword}」的法規</div>`;
   }
   listEl.innerHTML = html;
+}
+function renderLawQAList(qs) {
+  if (!qs.length) {
+    return `<p style="color:var(--text-secondary);font-size:13px;margin-top:10px">目前尚無這個法規的歷屆考題資料。</p>`;
+  }
+  let html = `<h4>歷屆相關考題（共 ${qs.length} 題）</h4><div class="law-qa-list">`;
+  qs.forEach(q => {
+    const isHearted = !!(userData.hearts && userData.hearts[q.id]);
+    html += `<div class="law-qa-item">
+      <div class="law-qa-head">
+        <div class="law-qa-topline">
+          <span class="law-qa-badge">${q.year}年${getSessionLabel(q.session)} 第${q.num}題</span>
+          <button class="law-qa-heart${isHearted ? ' active' : ''}" onclick="toggleLawQAHeart('${q.id}', this)" title="${isHearted ? '取消愛心標記' : '加入愛心題目'}">${isHearted ? '❤️' : '🤍'}</button>
+        </div>
+        <div class="law-qa-text">${q.text}</div>
+        <div class="law-qa-options">${(q.options||[]).map(opt => `<div class="law-qa-option">${opt}</div>`).join('')}</div>
+      </div>
+      <div class="explanation-box">
+        <button class="explanation-toggle" onclick="toggleLawQA(this)">📝 查看答案與解析 <span>▼</span></button>
+        <div class="explanation-content"><strong>正解：${q.answer}</strong><br><br>${q.explanation||''}</div>
+      </div>
+    </div>`;
+  });
+  html += `</div>`;
+  return html;
+}
+function toggleLawQAHeart(qId, btn) {
+  userData.hearts = userData.hearts || {};
+  if (userData.hearts[qId]) {
+    delete userData.hearts[qId];
+    btn.textContent = '🤍';
+    btn.classList.remove('active');
+    btn.title = '加入愛心題目';
+    showToast('已從愛心移除');
+  } else {
+    userData.hearts[qId] = true;
+    btn.textContent = '❤️';
+    btn.classList.add('active');
+    btn.title = '取消愛心標記';
+    showToast('已加入愛心題目 ❤️');
+  }
+  saveUserData();
 }
 function openLawDetail(subcategoryId) {
   const found = getCategoryAndSubcategory(subcategoryId);
@@ -1063,26 +1105,31 @@ function openLawDetail(subcategoryId) {
     html += `<p style="color:var(--text-secondary);font-size:13px;margin-top:10px">此法規尚無重點筆記。</p>`;
   }
 
-  if (qs.length) {
-    html += `<h4>歷屆相關考題（共 ${qs.length} 題）</h4><div class="law-qa-list">`;
-    qs.forEach(q => {
-      html += `<div class="law-qa-item">
-        <div class="law-qa-head">
-          <div class="law-qa-badge">${q.year}年${getSessionLabel(q.session)} 第${q.num}題</div>
-          <div class="law-qa-text">${q.text}</div>
-        </div>
-        <div class="explanation-box">
-          <button class="explanation-toggle" onclick="toggleLawQA(this)">📝 查看答案與解析 <span>▼</span></button>
-          <div class="explanation-content"><strong>正解：${q.answer}</strong><br><br>${q.explanation||''}</div>
-        </div>
-      </div>`;
-    });
-    html += `</div>`;
-  } else {
-    html += `<p style="color:var(--text-secondary);font-size:13px;margin-top:10px">目前尚無這個法規的歷屆考題資料。</p>`;
-  }
+  html += renderLawQAList(qs);
 
   openModal(sub.name, html);
+}
+function openLawRefDetail(lawName) {
+  const ref = findLawReference(lawName);
+  if (!ref) { showToast('找不到此法規'); return; }
+  const qs = getQuestionsByLawName(lawName)
+    .sort((a,b) => a.year===b.year ? (a.session===b.session ? a.num-b.num : a.session-b.session) : a.year-b.year);
+
+  let html = `<div class="law-detail-meta"><span class="law-count-badge">本站題庫 ${qs.length} 題</span><span class="law-detail-cat">官方法規參考：${ref.sourceCategory}類</span></div>`;
+  html += `<div class="law-detail-meta">
+    <span class="law-count-badge ref">官方近5年 ${ref.recent5y} 題</span>
+    <span class="law-count-badge ref">官方歷屆 ${ref.alltime} 題</span>
+    <a href="${ref.url}" target="_blank" rel="noopener" class="law-ext-link" title="${ref.urlIsFallback ? '暫以搜尋引擎連結查找（尚無正式全文連結）' : '開啟全國法規資料庫全文'}">${ref.urlIsFallback ? '搜尋全國法規資料庫 🔍' : '開啟全國法規資料庫 🔗'}</a>
+  </div>
+  <div class="law-detail-cat" style="margin-bottom:8px">出現年度 ${ref.yearsAppeared} · 最新修正 ${ref.lastAmended}</div>`;
+
+  if (qs.length) {
+    html += `<div class="law-detail-actions"><button class="btn-primary" onclick="closeModal();startLawTagQuiz('${lawName}')">📖 開始練習本法規題目</button></div>`;
+  }
+
+  html += renderLawQAList(qs);
+
+  openModal(lawName, html);
 }
 function toggleLawQA(btn) {
   const content = btn.nextElementSibling;

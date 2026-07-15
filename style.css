@@ -824,3 +824,18 @@ a.law-card-name.law-ext-link:hover { text-decoration: underline; }
 
 .law-ext-link { color: var(--accent); font-size: 13px; text-decoration: none; font-weight: 600; }
 .law-ext-link:hover { text-decoration: underline; }
+
+.law-qa-options { margin-top: 8px; display: flex; flex-direction: column; gap: 5px; }
+.law-qa-option {
+  font-size: 13px; line-height: 1.6; color: var(--text-secondary);
+  background: var(--surface2); border-radius: 8px; padding: 7px 11px;
+}
+
+.law-qa-topline { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.law-qa-topline .law-qa-badge { margin-bottom: 0; }
+.law-qa-heart {
+  border: none; background: transparent; font-size: 17px; cursor: pointer;
+  padding: 2px 6px; line-height: 1; border-radius: 8px; transition: transform 0.1s;
+  flex-shrink: 0;
+}
+.law-qa-heart:hover { transform: scale(1.15); background: var(--surface2); }
